@@ -1,0 +1,461 @@
+import {
+  getDatabase,
+  saveDatabase,
+  generateUuid,
+  buildDefaultTeamsForOrg,
+  recordAuditLog,
+} from './database.js';
+import { DEFAULT_TEAM_POSITIONS } from './validation.js';
+
+/**
+ * Reusable Team & Leadership Repository Layer (`lib/teams.js`)
+ * ------------------------------------------------------------
+ * Implements a single unified Team model across:
+ * - Organizational Levels: State, District, Constitution, Mandal, Gramam
+ * - Team Categories: Main Team, Youth Team, Mahila Team
+ * - Default Leadership Positions (~30 positions, with dynamic Executive Member capacity)
+ */
+
+export function getPositionDefinitionsForTeam(team) {
+  const execLimit = typeof team?.executiveMemberLimit === 'number' ? team.executiveMemberLimit : 14;
+  return DEFAULT_TEAM_POSITIONS.map((pos) => {
+    if (pos.code === 'EXECUTIVE_MEMBER') {
+      return { ...pos, maxCount: execLimit };
+    }
+    return { ...pos };
+  });
+}
+
+/**
+ * Enriches a team record with full hierarchy names and assigned leadership roster.
+ */
+export function enrichTeamDetails(team, db = getDatabase()) {
+  const state = db.states.find((s) => s.id === team.stateId);
+  const district = team.districtId ? db.districts.find((d) => d.id === team.districtId) : null;
+  const constitution = team.constitutionId
+    ? db.constitutions.find((c) => c.id === team.constitutionId)
+    : null;
+  const mandal = team.mandalId ? db.mandals.find((m) => m.id === team.mandalId) : null;
+  const gramam = team.gramamId ? db.gramams.find((g) => g.id === team.gramamId) : null;
+
+  const positionDefs = getPositionDefinitionsForTeam(team);
+  const totalCapacity = positionDefs.reduce((acc, p) => acc + p.maxCount, 0);
+
+  const assignments = db.teamMembers
+    .filter((tm) => tm.teamId === team.id && tm.status === 'Active')
+    .map((tm) => {
+      const member = db.members.find((m) => m.id === tm.memberId);
+      const posDef = positionDefs.find((p) => p.code === tm.positionCode);
+      return {
+        ...tm,
+        sortOrder: posDef ? posDef.sortOrder : 99,
+        memberName: member ? member.fullName : 'Unknown Member',
+        memberMobile: member ? member.mobile : '',
+        memberStatus: member ? member.status : 'Unknown',
+        memberPhotoUrl: member ? member.photoUrl : '',
+        memberDistrictName: member ? member.districtName : '',
+        memberMandalName: member ? member.mandalName : '',
+      };
+    })
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.slotNumber - b.slotNumber);
+
+  const locationParts = [
+    gramam?.name,
+    mandal?.name,
+    constitution?.name,
+    district?.name,
+    state?.name || 'Andhra Pradesh',
+  ].filter(Boolean);
+
+  return {
+    ...team,
+    stateName: state?.name || 'Andhra Pradesh',
+    districtName: district?.name || null,
+    constitutionName: constitution?.name || null,
+    mandalName: mandal?.name || null,
+    gramamName: gramam?.name || null,
+    locationLabel: locationParts.join(' › '),
+    positionDefinitions: positionDefs,
+    totalPositionsCapacity: totalCapacity,
+    filledPositionsCount: assignments.length,
+    leaders: assignments,
+  };
+}
+
+/**
+ * Queries teams across any organizational level and category.
+ */
+export function queryTeams({
+  orgLevel = '',
+  orgId = '',
+  teamType = '',
+  districtId = '',
+  constitutionId = '',
+  mandalId = '',
+  search = '',
+} = {}) {
+  const db = getDatabase();
+  let filtered = db.teams;
+
+  if (orgLevel) {
+    filtered = filtered.filter((t) => t.orgLevel === orgLevel);
+  }
+  if (orgId) {
+    filtered = filtered.filter((t) => t.orgId === orgId);
+  }
+  if (teamType) {
+    filtered = filtered.filter((t) => t.teamType === teamType);
+  }
+  if (districtId) {
+    filtered = filtered.filter((t) => t.districtId === districtId);
+  }
+  if (constitutionId) {
+    filtered = filtered.filter((t) => t.constitutionId === constitutionId);
+  }
+  if (mandalId) {
+    filtered = filtered.filter((t) => t.mandalId === mandalId);
+  }
+  if (search && search.trim()) {
+    const q = search.trim().toLowerCase();
+    filtered = filtered.filter(
+      (t) =>
+        t.orgName.toLowerCase().includes(q) ||
+        t.teamType.toLowerCase().includes(q) ||
+        t.orgLevel.toLowerCase().includes(q)
+    );
+  }
+
+  return filtered.map((t) => enrichTeamDetails(t, db));
+}
+
+/**
+ * Ensures all 3 teams (Main, Youth, Mahila) exist for a given organization unit.
+ */
+export function ensureTeamsForOrganization({ orgLevel, orgId }) {
+  const db = getDatabase();
+  const existing = db.teams.filter((t) => t.orgLevel === orgLevel && t.orgId === orgId);
+  if (existing.length === 3) {
+    return existing.map((t) => enrichTeamDetails(t, db));
+  }
+
+  let unit = null;
+  if (orgLevel === 'State') unit = db.states.find((x) => x.id === orgId);
+  if (orgLevel === 'District') unit = db.districts.find((x) => x.id === orgId);
+  if (orgLevel === 'Constitution') unit = db.constitutions.find((x) => x.id === orgId);
+  if (orgLevel === 'Mandal') unit = db.mandals.find((x) => x.id === orgId);
+  if (orgLevel === 'Gramam') unit = db.gramams.find((x) => x.id === orgId);
+
+  if (!unit) throw new Error(`Organization unit not found for ${orgLevel} (${orgId})`);
+
+  const defaults = buildDefaultTeamsForOrg({
+    orgLevel,
+    orgId: unit.id,
+    orgName: unit.name,
+    stateId: unit.stateId || 'state-ap',
+    districtId: unit.districtId || (orgLevel === 'District' ? unit.id : null),
+    constitutionId: unit.constitutionId || (orgLevel === 'Constitution' ? unit.id : null),
+    mandalId: unit.mandalId || (orgLevel === 'Mandal' ? unit.id : null),
+    gramamId: orgLevel === 'Gramam' ? unit.id : null,
+  });
+
+  defaults.forEach((defTeam) => {
+    const already = db.teams.some(
+      (t) => t.orgLevel === orgLevel && t.orgId === orgId && t.teamType === defTeam.teamType
+    );
+    if (!already) {
+      db.teams.push(defTeam);
+    }
+  });
+
+  saveDatabase(db);
+  return db.teams
+    .filter((t) => t.orgLevel === orgLevel && t.orgId === orgId)
+    .map((t) => enrichTeamDetails(t, db));
+}
+
+/**
+ * Updates the Executive Member capacity for a specific team (since Executive Members are variable).
+ */
+export function updateTeamExecutiveCapacity({ teamId, executiveMemberLimit, actor = 'admin' }) {
+  const db = getDatabase();
+  const team = db.teams.find((t) => t.id === teamId);
+  if (!team) throw new Error('Team not found.');
+
+  const limitNum = Number(executiveMemberLimit);
+  if (!Number.isInteger(limitNum) || limitNum < 1 || limitNum > 200) {
+    throw new Error('Executive Member capacity must be an integer between 1 and 200.');
+  }
+
+  const currentExecCount = db.teamMembers.filter(
+    (tm) => tm.teamId === teamId && tm.positionCode === 'EXECUTIVE_MEMBER' && tm.status === 'Active'
+  ).length;
+
+  if (limitNum < currentExecCount) {
+    throw new Error(
+      `Cannot reduce Executive Member slots below currently assigned count (${currentExecCount}).`
+    );
+  }
+
+  team.executiveMemberLimit = limitNum;
+  saveDatabase(db);
+
+  recordAuditLog({
+    action: 'TEAM_CAPACITY_UPDATED',
+    entityType: 'Team',
+    entityId: team.id,
+    actor,
+    details: `Updated Executive Member capacity for ${team.orgName} - ${team.teamType} to ${limitNum} positions.`,
+  });
+
+  return enrichTeamDetails(team, db);
+}
+
+/**
+ * Assigns an approved/active member to a leadership position in a team.
+ * Prevents duplicate/conflicting positions in the same team and enforces slot limits.
+ */
+export function assignLeaderToTeam({
+  teamId,
+  memberId,
+  positionCode,
+  actor = 'admin',
+}) {
+  const db = getDatabase();
+  const team = db.teams.find((t) => t.id === teamId);
+  if (!team) throw new Error('Selected Team does not exist.');
+
+  const member = db.members.find((m) => m.id === memberId);
+  if (!member) throw new Error('Selected Member does not exist.');
+
+  if (!member.membershipId || !['Active', 'Approved'].includes(member.status)) {
+    throw new Error(
+      'Only Approved/Active members with a valid Membership ID can be assigned to leadership positions.'
+    );
+  }
+
+  // Prevent same member from holding conflicting duplicate positions within the same team
+  const existingInTeam = db.teamMembers.find(
+    (tm) => tm.teamId === teamId && tm.memberId === memberId && tm.status === 'Active'
+  );
+  if (existingInTeam) {
+    throw new Error(
+      `${member.fullName} (${member.membershipId}) already holds the position of "${existingInTeam.positionTitle}" in ${team.orgName} - ${team.teamType}. Use "Change Position" to update their role.`
+    );
+  }
+
+  const posDefs = getPositionDefinitionsForTeam(team);
+  const posDef = posDefs.find((p) => p.code === positionCode);
+  if (!posDef) {
+    throw new Error(`Invalid leadership position code: ${positionCode}`);
+  }
+
+  const activeInPosition = db.teamMembers.filter(
+    (tm) => tm.teamId === teamId && tm.positionCode === positionCode && tm.status === 'Active'
+  );
+
+  if (activeInPosition.length >= posDef.maxCount) {
+    throw new Error(
+      `All ${posDef.maxCount} slot(s) for "${posDef.title}" in ${team.orgName} - ${team.teamType} are currently filled.`
+    );
+  }
+
+  const usedSlots = new Set(activeInPosition.map((tm) => tm.slotNumber));
+  let slotNumber = 1;
+  while (usedSlots.has(slotNumber)) {
+    slotNumber += 1;
+  }
+
+  const assignment = {
+    id: generateUuid('tm'),
+    teamId: team.id,
+    memberId: member.id,
+    membershipId: member.membershipId,
+    positionCode: posDef.code,
+    positionTitle: posDef.title,
+    slotNumber,
+    assignedAt: new Date().toISOString(),
+    assignedBy: actor,
+    status: 'Active',
+  };
+
+  db.teamMembers.push(assignment);
+  saveDatabase(db);
+
+  recordAuditLog({
+    action: 'LEADER_ASSIGNED',
+    entityType: 'TeamMember',
+    entityId: assignment.id,
+    actor,
+    details: `Assigned ${member.fullName} (${member.membershipId}) as ${posDef.title} in ${team.orgName} (${team.teamType}).`,
+  });
+
+  return enrichTeamDetails(team, db);
+}
+
+/**
+ * Changes an existing leader's position within a team.
+ */
+export function changeLeaderPosition({ teamMemberId, newPositionCode, actor = 'admin' }) {
+  const db = getDatabase();
+  const tm = db.teamMembers.find((item) => item.id === teamMemberId && item.status === 'Active');
+  if (!tm) throw new Error('Leadership assignment record not found.');
+
+  const team = db.teams.find((t) => t.id === tm.teamId);
+  if (!team) throw new Error('Associated Team not found.');
+
+  if (tm.positionCode === newPositionCode) {
+    return enrichTeamDetails(team, db);
+  }
+
+  const posDefs = getPositionDefinitionsForTeam(team);
+  const newPosDef = posDefs.find((p) => p.code === newPositionCode);
+  if (!newPosDef) throw new Error('Invalid target leadership position.');
+
+  const activeInNewPosition = db.teamMembers.filter(
+    (item) =>
+      item.teamId === team.id &&
+      item.positionCode === newPositionCode &&
+      item.status === 'Active' &&
+      item.id !== tm.id
+  );
+
+  if (activeInNewPosition.length >= newPosDef.maxCount) {
+    throw new Error(
+      `All ${newPosDef.maxCount} slot(s) for "${newPosDef.title}" in ${team.orgName} - ${team.teamType} are already occupied.`
+    );
+  }
+
+  const usedSlots = new Set(activeInNewPosition.map((item) => item.slotNumber));
+  let slotNumber = 1;
+  while (usedSlots.has(slotNumber)) {
+    slotNumber += 1;
+  }
+
+  const oldTitle = tm.positionTitle;
+  tm.positionCode = newPosDef.code;
+  tm.positionTitle = newPosDef.title;
+  tm.slotNumber = slotNumber;
+  tm.assignedAt = new Date().toISOString();
+
+  saveDatabase(db);
+
+  const member = db.members.find((m) => m.id === tm.memberId);
+  recordAuditLog({
+    action: 'LEADER_POSITION_CHANGED',
+    entityType: 'TeamMember',
+    entityId: tm.id,
+    actor,
+    details: `Changed position of ${member?.fullName || tm.membershipId} from "${oldTitle}" to "${newPosDef.title}" in ${team.orgName} (${team.teamType}).`,
+  });
+
+  return enrichTeamDetails(team, db);
+}
+
+/**
+ * Removes a member from a leadership position.
+ */
+export function removeLeaderFromTeam({ teamMemberId, actor = 'admin' }) {
+  const db = getDatabase();
+  const index = db.teamMembers.findIndex((item) => item.id === teamMemberId);
+  if (index === -1) throw new Error('Leadership assignment not found.');
+
+  const removed = db.teamMembers[index];
+  const team = db.teams.find((t) => t.id === removed.teamId);
+  const member = db.members.find((m) => m.id === removed.memberId);
+
+  db.teamMembers.splice(index, 1);
+  saveDatabase(db);
+
+  recordAuditLog({
+    action: 'LEADER_REMOVED',
+    entityType: 'TeamMember',
+    entityId: teamMemberId,
+    actor,
+    details: `Removed ${member?.fullName || removed.membershipId} from ${removed.positionTitle} in ${team?.orgName || ''} (${team?.teamType || ''}).`,
+  });
+
+  return team ? enrichTeamDetails(team, db) : null;
+}
+
+/**
+ * Lists all active leaders across all teams with filtering and search.
+ */
+export function queryAllLeaders({
+  search = '',
+  orgLevel = '',
+  teamType = '',
+  positionCode = '',
+  districtId = '',
+  constitutionId = '',
+  mandalId = '',
+} = {}) {
+  const db = getDatabase();
+
+  const results = db.teamMembers
+    .filter((tm) => tm.status === 'Active')
+    .map((tm) => {
+      const team = db.teams.find((t) => t.id === tm.teamId);
+      const member = db.members.find((m) => m.id === tm.memberId);
+      if (!team || !member) return null;
+
+      const district = team.districtId ? db.districts.find((d) => d.id === team.districtId) : null;
+      const constitution = team.constitutionId
+        ? db.constitutions.find((c) => c.id === team.constitutionId)
+        : null;
+      const mandal = team.mandalId ? db.mandals.find((m) => m.id === team.mandalId) : null;
+      const gramam = team.gramamId ? db.gramams.find((g) => g.id === team.gramamId) : null;
+
+      const locationParts = [
+        gramam?.name,
+        mandal?.name,
+        constitution?.name,
+        district?.name,
+        'Andhra Pradesh',
+      ].filter(Boolean);
+
+      return {
+        id: tm.id,
+        teamId: team.id,
+        memberId: member.id,
+        memberName: member.fullName,
+        membershipId: member.membershipId,
+        mobile: member.mobile,
+        gender: member.gender,
+        photoUrl: member.photoUrl,
+        positionCode: tm.positionCode,
+        positionTitle: tm.positionTitle,
+        slotNumber: tm.slotNumber,
+        teamType: team.teamType,
+        orgLevel: team.orgLevel,
+        orgId: team.orgId,
+        orgName: team.orgName,
+        districtId: team.districtId,
+        constitutionId: team.constitutionId,
+        mandalId: team.mandalId,
+        location: locationParts.join(' › '),
+        assignedAt: tm.assignedAt,
+      };
+    })
+    .filter(Boolean);
+
+  return results.filter((item) => {
+    if (orgLevel && item.orgLevel !== orgLevel) return false;
+    if (teamType && item.teamType !== teamType) return false;
+    if (positionCode && item.positionCode !== positionCode) return false;
+    if (districtId && item.districtId !== districtId) return false;
+    if (constitutionId && item.constitutionId !== constitutionId) return false;
+    if (mandalId && item.mandalId !== mandalId) return false;
+    if (search && search.trim()) {
+      const q = search.trim().toLowerCase();
+      const matchName = item.memberName.toLowerCase().includes(q);
+      const matchId = (item.membershipId || '').toLowerCase().includes(q);
+      const matchMobile = (item.mobile || '').includes(q);
+      const matchPos = item.positionTitle.toLowerCase().includes(q);
+      const matchOrg = item.orgName.toLowerCase().includes(q);
+      if (!matchName && !matchId && !matchMobile && !matchPos && !matchOrg) {
+        return false;
+      }
+    }
+    return true;
+  });
+}
