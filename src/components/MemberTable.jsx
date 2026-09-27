@@ -14,21 +14,17 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import {
+  VALID_GENDERS,
   VALID_MEMBERSHIP_STATUSES,
-  VALID_TEAM_TYPES,
-  DEFAULT_TEAM_POSITIONS,
+  MEMBER_TEAM_TYPE_OPTIONS,
 } from '@/lib/validation';
+import { AP_COMPLETE_HIERARCHY } from '@/lib/apHierarchyData';
 
 export default function MemberTable({
-  hierarchy,
   defaultStatus = '',
   title = 'Community Members Directory',
   showApplicationActions = false,
 }) {
-  const districts = hierarchy?.districts || [];
-  const allConstitutions = hierarchy?.constitutions || [];
-  const allMandals = hierarchy?.mandals || [];
-
   const [items, setItems] = useState([]);
   const [pagination, setPagination] = useState({
     page: 1,
@@ -42,11 +38,7 @@ export default function MemberTable({
   // Server-side query filters
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState(defaultStatus);
-  const [districtId, setDistrictId] = useState('');
-  const [constitutionId, setConstitutionId] = useState('');
-  const [mandalId, setMandalId] = useState('');
   const [teamType, setTeamType] = useState('');
-  const [positionCode, setPositionCode] = useState('');
   const [sortBy, setSortBy] = useState('createdAt');
   const [sortOrder, setSortOrder] = useState('desc');
 
@@ -55,16 +47,6 @@ export default function MemberTable({
   const [editingMember, setEditingMember] = useState(null);
   const [rejectModalMember, setRejectModalMember] = useState(null);
   const [rejectRemarks, setRejectRemarks] = useState('');
-
-  const availableConstitutions = districtId
-    ? allConstitutions.filter((c) => c.districtId === districtId)
-    : allConstitutions;
-
-  const availableMandals = constitutionId
-    ? allMandals.filter((m) => m.constitutionId === constitutionId)
-    : districtId
-    ? allMandals.filter((m) => m.districtId === districtId)
-    : allMandals;
 
   const fetchMembers = useCallback(
     async (targetPage = pagination.page) => {
@@ -75,11 +57,7 @@ export default function MemberTable({
           limit: String(pagination.limit),
           search,
           status,
-          districtId,
-          constitutionId,
-          mandalId,
           teamType,
-          positionCode,
           sortBy,
           sortOrder,
         });
@@ -103,11 +81,7 @@ export default function MemberTable({
       pagination.limit,
       search,
       status,
-      districtId,
-      constitutionId,
-      mandalId,
       teamType,
-      positionCode,
       sortBy,
       sortOrder,
     ]
@@ -115,16 +89,7 @@ export default function MemberTable({
 
   useEffect(() => {
     fetchMembers(1);
-  }, [
-    status,
-    districtId,
-    constitutionId,
-    mandalId,
-    teamType,
-    positionCode,
-    sortBy,
-    sortOrder,
-  ]);
+  }, [status, teamType, sortBy, sortOrder]);
 
   function handleSearchSubmit(e) {
     e.preventDefault();
@@ -219,13 +184,52 @@ export default function MemberTable({
     return <span className={`badge ${map[st] || 'badge-info'}`}>{st}</span>;
   }
 
+  function formatMemberJurisdiction(member) {
+    const tType = member.memberTeamType || 'State';
+    if (tType === 'State') {
+      return member.stateName || 'Andhra Pradesh';
+    }
+    if (tType === 'District') {
+      return [member.districtName, member.stateName || 'Andhra Pradesh']
+        .filter(Boolean)
+        .join(' › ');
+    }
+    if (tType === 'Constituency') {
+      return [
+        member.constitutionName,
+        member.districtName,
+        member.stateName || 'Andhra Pradesh',
+      ]
+        .filter(Boolean)
+        .join(' › ');
+    }
+    return [
+      member.mandalName,
+      member.constitutionName,
+      member.districtName,
+      member.stateName || 'Andhra Pradesh',
+    ]
+      .filter(Boolean)
+      .join(' › ');
+  }
+
+  // Helpers for Edit Modal cascading dropdowns
+  const editDistrictObj =
+    AP_COMPLETE_HIERARCHY.find((d) => d.district === editingMember?.districtName) ||
+    AP_COMPLETE_HIERARCHY[0];
+  const editConstituencies = editDistrictObj?.constituencies || [];
+  const editConstObj =
+    editConstituencies.find((c) => c.name === editingMember?.constitutionName) ||
+    editConstituencies[0];
+  const editMandals = editConstObj?.mandals || [];
+
   return (
     <div className="card">
       <div className="card-header" style={{ flexWrap: 'wrap' }}>
         <div>
           <h2 className="card-title">{title}</h2>
           <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-            Server-side paginated &amp; indexed query engine (20+ Lakh Member Capacity) — Showing{' '}
+            Server-side paginated query engine (20+ Lakh Member Capacity) — Showing{' '}
             <strong>{items.length}</strong> of <strong>{pagination.total}</strong> matching records
           </p>
         </div>
@@ -253,7 +257,7 @@ export default function MemberTable({
         </div>
       )}
 
-      {/* Search & Multi-Attribute Filter Bar */}
+      {/* Search & Filter Bar */}
       <form
         onSubmit={handleSearchSubmit}
         style={{
@@ -266,12 +270,12 @@ export default function MemberTable({
       >
         <div className="form-grid" style={{ marginBottom: '12px' }}>
           <div className="form-group">
-            <label className="form-label">Search (Membership ID / Name / Mobile)</label>
+            <label className="form-label">Search (ID / Name / Mobile / District / Mandal / PinCode)</label>
             <div style={{ display: 'flex', gap: '6px' }}>
               <input
                 type="text"
                 className="form-control"
-                placeholder="e.g. MUD-00000001, Name, or 9848..."
+                placeholder="e.g. MUD-00000001, Name, Mobile, District, or PinCode..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -298,88 +302,19 @@ export default function MemberTable({
           </div>
 
           <div className="form-group">
-            <label className="form-label">District</label>
+            <label className="form-label">Filter by Team Type</label>
             <select
               className="form-control"
-              value={districtId}
-              onChange={(e) => {
-                setDistrictId(e.target.value);
-                setConstitutionId('');
-                setMandalId('');
-              }}
+              value={teamType}
+              onChange={(e) => setTeamType(e.target.value)}
             >
-              <option value="">All Districts (Andhra Pradesh)</option>
-              {districts.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
+              <option value="">All Team Types</option>
+              {MEMBER_TEAM_TYPE_OPTIONS.map((t) => (
+                <option key={t} value={t}>
+                  {t}
                 </option>
               ))}
             </select>
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Constitution</label>
-            <select
-              className="form-control"
-              value={constitutionId}
-              onChange={(e) => {
-                setConstitutionId(e.target.value);
-                setMandalId('');
-              }}
-            >
-              <option value="">All Constitutions</option>
-              {availableConstitutions.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Mandal</label>
-            <select
-              className="form-control"
-              value={mandalId}
-              onChange={(e) => setMandalId(e.target.value)}
-            >
-              <option value="">All Mandals</option>
-              {availableMandals.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Team &amp; Leadership Filter</label>
-            <div style={{ display: 'flex', gap: '6px' }}>
-              <select
-                className="form-control"
-                value={teamType}
-                onChange={(e) => setTeamType(e.target.value)}
-              >
-                <option value="">Any Team</option>
-                {VALID_TEAM_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="form-control"
-                value={positionCode}
-                onChange={(e) => setPositionCode(e.target.value)}
-              >
-                <option value="">Any Position</option>
-                {DEFAULT_TEAM_POSITIONS.map((p) => (
-                  <option key={p.code} value={p.code}>
-                    {p.title}
-                  </option>
-                ))}
-              </select>
-            </div>
           </div>
         </div>
 
@@ -405,7 +340,7 @@ export default function MemberTable({
             >
               <option value="createdAt">Application Date</option>
               <option value="membershipId">Membership ID</option>
-              <option value="fullName">Member Name</option>
+              <option value="fullName">Full Name</option>
               <option value="status">Status</option>
             </select>
             <select
@@ -425,15 +360,11 @@ export default function MemberTable({
             onClick={() => {
               setSearch('');
               setStatus(defaultStatus);
-              setDistrictId('');
-              setConstitutionId('');
-              setMandalId('');
               setTeamType('');
-              setPositionCode('');
               fetchMembers(1);
             }}
           >
-            Reset All Filters
+            Reset Filters
           </button>
         </div>
       </form>
@@ -444,10 +375,11 @@ export default function MemberTable({
           <thead>
             <tr>
               <th>Membership ID / App No</th>
-              <th>Member Name &amp; Parentage</th>
-              <th>Mobile &amp; Gender</th>
-              <th>District / Constitution / Mandal</th>
-              <th>Leadership Role</th>
+              <th>Full Name &amp; Passport Photo</th>
+              <th>Gender &amp; Mobile</th>
+              <th>Email Address</th>
+              <th>Team Type &amp; Jurisdiction</th>
+              <th>PinCode</th>
               <th>Status</th>
               <th style={{ textAlign: 'right' }}>Actions</th>
             </tr>
@@ -455,13 +387,13 @@ export default function MemberTable({
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={7} style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
+                <td colSpan={8} style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
                   Loading member records from server...
                 </td>
               </tr>
             ) : items.length === 0 ? (
               <tr>
-                <td colSpan={7} style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
+                <td colSpan={8} style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
                   No members or applications found matching your search criteria.
                 </td>
               </tr>
@@ -484,49 +416,74 @@ export default function MemberTable({
                   </td>
 
                   <td>
-                    <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>
-                      {member.fullName}
-                    </div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                      S/D/o: {member.fatherName}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      {member.photoUrl ? (
+                        <img
+                          src={member.photoUrl}
+                          alt={member.fullName}
+                          style={{
+                            width: '34px',
+                            height: '34px',
+                            borderRadius: '6px',
+                            objectFit: 'cover',
+                            border: '1px solid var(--border-color)',
+                          }}
+                        />
+                      ) : (
+                        <div
+                          style={{
+                            width: '34px',
+                            height: '34px',
+                            borderRadius: '6px',
+                            background: 'var(--primary-light)',
+                            color: 'var(--primary)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontWeight: 700,
+                            fontSize: '13px',
+                          }}
+                        >
+                          {(member.fullName || 'M').slice(0, 1).toUpperCase()}
+                        </div>
+                      )}
+                      <div>
+                        <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>
+                          {member.fullName}
+                        </div>
+                        {member.leadershipPositions?.length > 0 && (
+                          <div style={{ marginTop: '2px' }}>
+                            <span className="badge badge-info" style={{ fontSize: '10px' }}>
+                              <Award size={10} /> {member.leadershipPositions[0].positionTitle}
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </td>
 
                   <td>
                     <div style={{ fontWeight: 600 }}>{member.mobile}</div>
                     <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                      {member.gender} • DOB: {member.dob}
+                      {member.gender}
+                    </div>
+                  </td>
+
+                  <td style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                    {member.email || '—'}
+                  </td>
+
+                  <td>
+                    <span className="badge badge-info">
+                      {member.memberTeamType || 'State'}
+                    </span>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                      {formatMemberJurisdiction(member)}
                     </div>
                   </td>
 
                   <td>
-                    <div style={{ fontWeight: 600, fontSize: '13px' }}>{member.districtName}</div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                      {member.constitutionName} › {member.mandalName}
-                    </div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                      Gramam: {member.gramamName} ({member.pincode})
-                    </div>
-                  </td>
-
-                  <td>
-                    {member.leadershipPositions && member.leadershipPositions.length > 0 ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        {member.leadershipPositions.map((lp) => (
-                          <span
-                            key={lp.teamMemberId}
-                            className="badge badge-info"
-                            style={{ fontSize: '11px' }}
-                          >
-                            <Award size={11} /> {lp.positionTitle} ({lp.orgLevel} - {lp.teamType})
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
-                      <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                        General Member
-                      </span>
-                    )}
+                    <code>{member.pincode}</code>
                   </td>
 
                   <td>{renderStatusBadge(member.status)}</td>
@@ -572,7 +529,21 @@ export default function MemberTable({
                         type="button"
                         className="btn btn-outline btn-sm"
                         title="Edit Member / Status"
-                        onClick={() => setEditingMember({ ...member })}
+                        onClick={() =>
+                          setEditingMember({
+                            ...member,
+                            memberTeamType: member.memberTeamType || 'State',
+                            stateName: member.stateName || 'Andhra Pradesh',
+                            districtName:
+                              member.districtName || AP_COMPLETE_HIERARCHY[0].district,
+                            constitutionName:
+                              member.constitutionName ||
+                              AP_COMPLETE_HIERARCHY[0].constituencies[0].name,
+                            mandalName:
+                              member.mandalName ||
+                              AP_COMPLETE_HIERARCHY[0].constituencies[0].mandals[0],
+                          })
+                        }
                       >
                         <Edit3 size={14} /> Edit
                       </button>
@@ -640,7 +611,6 @@ export default function MemberTable({
             </div>
 
             <div className="modal-body">
-              {/* Digital Membership Card Banner */}
               <div
                 style={{
                   background: 'linear-gradient(135deg, var(--primary-dark), var(--primary))',
@@ -656,15 +626,30 @@ export default function MemberTable({
                   gap: '14px',
                 }}
               >
-                <div>
-                  <div style={{ fontSize: '11px', color: '#fde68a', fontWeight: 700, letterSpacing: '0.5px' }}>
-                    ANDHRA PRADESH MUDIRAJ COMMUNITY
-                  </div>
-                  <div style={{ fontSize: '20px', fontWeight: 800, marginTop: '4px' }}>
-                    {selectedMember.fullName}
-                  </div>
-                  <div style={{ fontSize: '13px', color: '#dbeafe', marginTop: '2px' }}>
-                    {selectedMember.gramamName}, {selectedMember.mandalName}, {selectedMember.districtName}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                  {selectedMember.photoUrl && (
+                    <img
+                      src={selectedMember.photoUrl}
+                      alt={selectedMember.fullName}
+                      style={{
+                        width: '56px',
+                        height: '56px',
+                        borderRadius: '8px',
+                        objectFit: 'cover',
+                        border: '2px solid #fbbf24',
+                      }}
+                    />
+                  )}
+                  <div>
+                    <div style={{ fontSize: '11px', color: '#fde68a', fontWeight: 700, letterSpacing: '0.5px' }}>
+                      ANDHRA PRADESH MUDIRAJ COMMUNITY
+                    </div>
+                    <div style={{ fontSize: '20px', fontWeight: 800, marginTop: '4px' }}>
+                      {selectedMember.fullName}
+                    </div>
+                    <div style={{ fontSize: '13px', color: '#dbeafe', marginTop: '2px' }}>
+                      {selectedMember.memberTeamType || 'State'} — {formatMemberJurisdiction(selectedMember)}
+                    </div>
                   </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
@@ -686,47 +671,30 @@ export default function MemberTable({
 
               <div className="grid-2" style={{ gap: '14px', fontSize: '13px' }}>
                 <div>
-                  <strong>Father Name:</strong> {selectedMember.fatherName}
+                  <strong>Full Name:</strong> {selectedMember.fullName}
                 </div>
                 <div>
-                  <strong>Mother Name:</strong> {selectedMember.motherName}
+                  <strong>Gender:</strong> {selectedMember.gender}
                 </div>
                 <div>
-                  <strong>Date of Birth / Gender:</strong> {selectedMember.dob} ({selectedMember.gender})
+                  <strong>Mobile Number:</strong> {selectedMember.mobile}
                 </div>
                 <div>
-                  <strong>Primary Mobile:</strong> {selectedMember.mobile}
+                  <strong>Email Address:</strong> {selectedMember.email || '—'}
                 </div>
                 <div>
-                  <strong>Alternate Mobile:</strong> {selectedMember.alternateMobile || '—'}
+                  <strong>Team Type:</strong>{' '}
+                  <span className="badge badge-info">{selectedMember.memberTeamType || 'State'}</span>
                 </div>
                 <div>
-                  <strong>Email:</strong> {selectedMember.email || '—'}
-                </div>
-                <div style={{ gridColumn: 'span 2' }}>
-                  <strong>Residential Address:</strong> H.No {selectedMember.houseNo},{' '}
-                  {selectedMember.street}, {selectedMember.gramamName}, {selectedMember.mandalName},{' '}
-                  {selectedMember.constitutionName} Constitution, {selectedMember.districtName} District,{' '}
-                  {selectedMember.stateName} - {selectedMember.pincode}
+                  <strong>Jurisdiction:</strong> {formatMemberJurisdiction(selectedMember)}
                 </div>
                 <div>
-                  <strong>Government ID Type:</strong> {selectedMember.idType}
+                  <strong>PinCode:</strong> <code>{selectedMember.pincode}</code>
                 </div>
                 <div>
-                  <strong>Government ID Number (Admin View):</strong>{' '}
-                  <code style={{ fontWeight: 700 }}>{selectedMember.idNumber}</code>
-                </div>
-                <div>
-                  <strong>Application Date:</strong>{' '}
-                  {selectedMember.applicationDate
-                    ? new Date(selectedMember.applicationDate).toLocaleString()
-                    : '—'}
-                </div>
-                <div>
-                  <strong>Approval Date:</strong>{' '}
-                  {selectedMember.approvalDate
-                    ? new Date(selectedMember.approvalDate).toLocaleString()
-                    : 'Not Yet Approved'}
+                  <strong>Passport / ID:</strong>{' '}
+                  <code>{selectedMember.passportNumber || selectedMember.idNumber || 'Verified'}</code>
                 </div>
                 <div style={{ gridColumn: 'span 2' }}>
                   <strong>Remarks:</strong> {selectedMember.remarks || '—'}
@@ -830,6 +798,189 @@ export default function MemberTable({
                   </div>
 
                   <div className="form-group">
+                    <label className="form-label">Gender</label>
+                    <select
+                      className="form-control"
+                      value={editingMember.gender}
+                      onChange={(e) =>
+                        setEditingMember({ ...editingMember, gender: e.target.value })
+                      }
+                    >
+                      {VALID_GENDERS.map((g) => (
+                        <option key={g} value={g}>
+                          {g}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Mobile Number</label>
+                    <input
+                      type="text"
+                      maxLength={10}
+                      className="form-control"
+                      value={editingMember.mobile}
+                      onChange={(e) =>
+                        setEditingMember({ ...editingMember, mobile: e.target.value })
+                      }
+                      required
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Email Address</label>
+                    <input
+                      type="email"
+                      className="form-control"
+                      value={editingMember.email || ''}
+                      onChange={(e) =>
+                        setEditingMember({ ...editingMember, email: e.target.value })
+                      }
+                      required
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Team Type</label>
+                    <select
+                      className="form-control"
+                      value={editingMember.memberTeamType || 'State'}
+                      onChange={(e) =>
+                        setEditingMember({
+                          ...editingMember,
+                          memberTeamType: e.target.value,
+                        })
+                      }
+                    >
+                      {MEMBER_TEAM_TYPE_OPTIONS.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Select State</label>
+                    <select
+                      className="form-control"
+                      value={editingMember.stateName || 'Andhra Pradesh'}
+                      onChange={(e) =>
+                        setEditingMember({
+                          ...editingMember,
+                          stateName: e.target.value,
+                        })
+                      }
+                    >
+                      <option value="Andhra Pradesh">Andhra Pradesh</option>
+                    </select>
+                  </div>
+
+                  {[
+                    'District',
+                    'Constituency',
+                    'Mandal Main',
+                    'Mandal Youth',
+                    'Mandal Mahila',
+                  ].includes(editingMember.memberTeamType) && (
+                    <div className="form-group">
+                      <label className="form-label">Select District</label>
+                      <select
+                        className="form-control"
+                        value={editingMember.districtName}
+                        onChange={(e) => {
+                          const newDist = e.target.value;
+                          const dObj = AP_COMPLETE_HIERARCHY.find(
+                            (d) => d.district === newDist
+                          );
+                          const firstC = dObj?.constituencies?.[0];
+                          setEditingMember({
+                            ...editingMember,
+                            districtName: newDist,
+                            constitutionName: firstC?.name || '',
+                            mandalName: firstC?.mandals?.[0] || '',
+                          });
+                        }}
+                      >
+                        {AP_COMPLETE_HIERARCHY.map((d) => (
+                          <option key={d.district} value={d.district}>
+                            {d.district}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {[
+                    'Constituency',
+                    'Mandal Main',
+                    'Mandal Youth',
+                    'Mandal Mahila',
+                  ].includes(editingMember.memberTeamType) && (
+                    <div className="form-group">
+                      <label className="form-label">Select Constituency</label>
+                      <select
+                        className="form-control"
+                        value={editingMember.constitutionName}
+                        onChange={(e) => {
+                          const newC = e.target.value;
+                          const cObj = editConstituencies.find((c) => c.name === newC);
+                          setEditingMember({
+                            ...editingMember,
+                            constitutionName: newC,
+                            mandalName: cObj?.mandals?.[0] || '',
+                          });
+                        }}
+                      >
+                        {editConstituencies.map((c) => (
+                          <option key={c.name} value={c.name}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {['Mandal Main', 'Mandal Youth', 'Mandal Mahila'].includes(
+                    editingMember.memberTeamType
+                  ) && (
+                    <div className="form-group">
+                      <label className="form-label">Select Mandal</label>
+                      <select
+                        className="form-control"
+                        value={editingMember.mandalName}
+                        onChange={(e) =>
+                          setEditingMember({
+                            ...editingMember,
+                            mandalName: e.target.value,
+                          })
+                        }
+                      >
+                        {editMandals.map((m) => (
+                          <option key={m} value={m}>
+                            {m}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div className="form-group">
+                    <label className="form-label">PinCode</label>
+                    <input
+                      type="text"
+                      maxLength={6}
+                      className="form-control"
+                      value={editingMember.pincode || ''}
+                      onChange={(e) =>
+                        setEditingMember({ ...editingMember, pincode: e.target.value })
+                      }
+                      required
+                    />
+                  </div>
+
+                  <div className="form-group">
                     <label className="form-label">Membership Status</label>
                     <select
                       className="form-control"
@@ -844,70 +995,6 @@ export default function MemberTable({
                         </option>
                       ))}
                     </select>
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Father Name</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={editingMember.fatherName}
-                      onChange={(e) =>
-                        setEditingMember({ ...editingMember, fatherName: e.target.value })
-                      }
-                      required
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Mother Name</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={editingMember.motherName}
-                      onChange={(e) =>
-                        setEditingMember({ ...editingMember, motherName: e.target.value })
-                      }
-                      required
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Mobile Number</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={editingMember.mobile}
-                      onChange={(e) =>
-                        setEditingMember({ ...editingMember, mobile: e.target.value })
-                      }
-                      required
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Village / Gramam</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={editingMember.gramamName}
-                      onChange={(e) =>
-                        setEditingMember({ ...editingMember, gramamName: e.target.value })
-                      }
-                      required
-                    />
-                  </div>
-
-                  <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                    <label className="form-label">Admin Remarks</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={editingMember.remarks || ''}
-                      onChange={(e) =>
-                        setEditingMember({ ...editingMember, remarks: e.target.value })
-                      }
-                    />
                   </div>
                 </div>
               </div>

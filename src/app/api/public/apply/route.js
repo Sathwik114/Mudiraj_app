@@ -4,7 +4,7 @@ import { memberService } from '@/services/memberService';
 /**
  * Public Membership Application & Status Lookup API
  * -------------------------------------------------
- * GET: Check status by Membership ID, Application No, or Mobile Number (never exposes raw ID number!)
+ * GET: Check status by Membership ID, Application No, or Mobile Number
  * POST: Submit a new Membership Application (Status = Pending)
  */
 
@@ -52,10 +52,11 @@ export async function POST(request) {
         application: {
           applicationNo: created.applicationNo,
           fullName: created.fullName,
+          memberTeamType: created.memberTeamType,
+          stateName: created.stateName,
           districtName: created.districtName,
           constitutionName: created.constitutionName,
           mandalName: created.mandalName,
-          gramamName: created.gramamName,
           status: created.status,
           applicationDate: created.applicationDate,
         },

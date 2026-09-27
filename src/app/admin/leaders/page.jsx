@@ -44,15 +44,12 @@ export default function AdminLeadersPage() {
       if (teamType) params.set('teamType', teamType);
       if (positionCode) params.set('positionCode', positionCode);
 
-      const [leadersRes, teamsRes] = await Promise.all([
-        fetch(`/api/admin/leaders?${params.toString()}`),
-        fetch('/api/admin/teams'),
-      ]);
-
+      const leadersRes = await fetch(`/api/admin/leaders?${params.toString()}`);
       const leadersData = await leadersRes.json();
-      const teamsData = await teamsRes.json();
-
       if (leadersRes.ok) setLeaders(leadersData.leaders || []);
+
+      const teamsRes = await fetch('/api/admin/teams');
+      const teamsData = await teamsRes.json();
       if (teamsRes.ok) {
         const allTeams = teamsData.teams || [];
         setTeams(allTeams);

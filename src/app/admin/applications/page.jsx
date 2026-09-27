@@ -1,23 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import MemberTable from '@/components/MemberTable';
 
 export default function AdminApplicationsPage() {
-  const [hierarchy, setHierarchy] = useState({
-    districts: [],
-    constitutions: [],
-    mandals: [],
-  });
   const [activeTab, setActiveTab] = useState('Pending');
-
-  useEffect(() => {
-    fetch('/api/admin/organizations')
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.hierarchy) setHierarchy(d.hierarchy);
-      });
-  }, []);
 
   const tabs = [
     { status: 'Pending', label: 'Pending Review Applications' },
@@ -55,7 +42,6 @@ export default function AdminApplicationsPage() {
 
       <MemberTable
         key={activeTab}
-        hierarchy={hierarchy}
         defaultStatus={activeTab}
         title={
           activeTab

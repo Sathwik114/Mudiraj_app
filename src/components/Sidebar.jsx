@@ -31,9 +31,6 @@ export default function Sidebar({ admin }) {
   ];
 
   async function handleLogout() {
-    if (!window.confirm('Are you sure you want to log out of the Admin Dashboard?')) {
-      return;
-    }
     await fetch('/api/auth/logout', { method: 'POST' });
     router.push('/login');
     router.refresh();
@@ -42,16 +39,18 @@ export default function Sidebar({ admin }) {
   return (
     <aside className="admin-sidebar">
       <div className="admin-sidebar-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div className="brand-emblem" style={{ width: '38px', height: '38px', fontSize: '15px' }}>
-            MC
-          </div>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: '15px', color: '#ffffff' }}>
-              Mudiraj Admin
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div className="brand-emblem" style={{ width: '38px', height: '38px', fontSize: '15px' }}>
+              MC
             </div>
-            <div style={{ fontSize: '11px', color: '#fbbf24', fontWeight: 600 }}>
-              ANDHRA PRADESH STATE
+            <div>
+              <div style={{ fontWeight: 700, fontSize: '15px', color: '#ffffff' }}>
+                Mudiraj Admin
+              </div>
+              <div style={{ fontSize: '11px', color: '#fbbf24', fontWeight: 600 }}>
+                ANDHRA PRADESH STATE
+              </div>
             </div>
           </div>
         </div>
@@ -89,29 +88,34 @@ export default function Sidebar({ admin }) {
           );
         })}
 
-        <div style={{ marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-          <Link href="/" className="admin-nav-item">
-            <Globe size={18} />
-            <span>Public Website</span>
-          </Link>
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="admin-nav-item"
-            style={{
-              width: '100%',
-              background: 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              color: '#fca5a5',
-              textAlign: 'left',
-              fontFamily: 'inherit',
-            }}
-          >
-            <LogOut size={18} />
-            <span>Logout</span>
-          </button>
-        </div>
+        {/* Prominent Logout Button directly after Settings */}
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="admin-nav-item"
+          style={{
+            width: '100%',
+            background: 'rgba(239, 68, 68, 0.18)',
+            border: '1px solid rgba(248, 113, 113, 0.4)',
+            cursor: 'pointer',
+            color: '#fecaca',
+            textAlign: 'left',
+            fontFamily: 'inherit',
+            marginTop: '8px',
+          }}
+        >
+          <LogOut size={18} />
+          <span>Logout</span>
+        </button>
+
+        <Link
+          href="/"
+          className="admin-nav-item"
+          style={{ marginTop: '6px', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '12px' }}
+        >
+          <Globe size={18} />
+          <span>Public Website</span>
+        </Link>
       </nav>
     </aside>
   );

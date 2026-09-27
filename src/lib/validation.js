@@ -1,16 +1,24 @@
 /**
  * Validation & Sanitization Utilities
  * -----------------------------------
- * Provides server-side and client-side validation for:
- * - Public Membership Applications
- * - Member Records
- * - Organizational Hierarchy Units
- * - Team Leadership Assignments
+ * Streamlined member validation for:
+ * Full Name, Gender, Mobile Number, Email Address, Passport, PinCode,
+ * Team Type, and conditional cascading State / District / Constituency / Mandal selection.
  */
 
 export const VALID_GENDERS = ['Male', 'Female', 'Other'];
 
+export const MEMBER_TEAM_TYPE_OPTIONS = [
+  'State',
+  'District',
+  'Constituency',
+  'Mandal Main',
+  'Mandal Youth',
+  'Mandal Mahila',
+];
+
 export const VALID_ID_TYPES = [
+  'Passport',
   'Aadhaar Card',
   'Voter ID (EPIC)',
   'PAN Card',
@@ -49,94 +57,24 @@ export const DEFAULT_TEAM_POSITIONS = [
   { code: 'EXECUTIVE_MEMBER', title: 'Executive Member', maxCount: 14, isFixed: false, sortOrder: 6 },
 ];
 
-/**
- * Validates an Indian 10-digit mobile number.
- */
 export function isValidMobile(mobile) {
   if (!mobile) return false;
   const cleaned = String(mobile).trim().replace(/\s+/g, '');
   return /^[6-9]\d{9}$/.test(cleaned);
 }
 
-/**
- * Validates email format.
- */
 export function isValidEmail(email) {
-  if (!email) return true; // Optional unless specified
+  if (!email) return false;
   const cleaned = String(email).trim();
-  if (!cleaned) return true;
+  if (!cleaned) return false;
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleaned);
 }
 
-/**
- * Validates a 6-digit Indian Pincode.
- */
 export function isValidPincode(pincode) {
   if (!pincode) return false;
   return /^\d{6}$/.test(String(pincode).trim());
 }
 
-/**
- * Validates Date of Birth (must be a valid past date and member must be at least 15 years old and <= 110 years).
- */
-export function validateDateOfBirth(dob) {
-  if (!dob) return { valid: false, message: 'Date of Birth is required.' };
-  const parsed = new Date(dob);
-  if (Number.isNaN(parsed.getTime())) {
-    return { valid: false, message: 'Invalid Date of Birth format.' };
-  }
-  const now = new Date();
-  if (parsed > now) {
-    return { valid: false, message: 'Date of Birth cannot be in the future.' };
-  }
-  let age = now.getFullYear() - parsed.getFullYear();
-  const m = now.getMonth() - parsed.getMonth();
-  if (m < 0 || (m === 0 && now.getDate() < parsed.getDate())) {
-    age -= 1;
-  }
-  if (age < 15) {
-    return { valid: false, message: 'Applicant must be at least 15 years old.' };
-  }
-  if (age > 115) {
-    return { valid: false, message: 'Please enter a valid Date of Birth.' };
-  }
-  return { valid: true, age };
-}
-
-/**
- * Validates government ID number format according to selected ID Type.
- */
-export function validateGovernmentId(idType, idNumber) {
-  if (!idType || !VALID_ID_TYPES.includes(idType)) {
-    return { valid: false, message: 'Please select a valid ID Type.' };
-  }
-  if (!idNumber || !String(idNumber).trim()) {
-    return { valid: false, message: 'ID Number is required.' };
-  }
-  const cleaned = String(idNumber).trim().toUpperCase().replace(/\s+/g, '');
-
-  if (idType === 'Aadhaar Card') {
-    if (!/^\d{12}$/.test(cleaned)) {
-      return { valid: false, message: 'Aadhaar Number must be exactly 12 digits.' };
-    }
-  } else if (idType === 'PAN Card') {
-    if (!/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(cleaned)) {
-      return { valid: false, message: 'PAN Number must follow standard 10-character format (e.g., ABCDE1234F).' };
-    }
-  } else if (idType === 'Voter ID (EPIC)') {
-    if (cleaned.length < 6 || cleaned.length > 16) {
-      return { valid: false, message: 'Voter ID must be between 6 and 16 alphanumeric characters.' };
-    }
-  } else if (cleaned.length < 5 || cleaned.length > 24) {
-    return { valid: false, message: 'ID Number must be between 5 and 24 characters.' };
-  }
-
-  return { valid: true, cleaned };
-}
-
-/**
- * Masks sensitive ID Numbers so they are never exposed in full on public endpoints.
- */
 export function maskIdNumber(idNumber) {
   if (!idNumber) return '****';
   const str = String(idNumber).trim().replace(/\s+/g, '');
@@ -145,24 +83,14 @@ export function maskIdNumber(idNumber) {
 }
 
 /**
- * Validates full membership application payload.
+ * Validates membership application / member registration payload
+ * including conditional State -> District -> Constituency -> Mandal fields based on Team Type.
  */
 export function validateMembershipApplication(payload) {
   const errors = {};
 
-  if (!payload.fullName || String(payload.fullName).trim().length < 3) {
-    errors.fullName = 'Full Name is required (minimum 3 characters).';
-  }
-  if (!payload.fatherName || String(payload.fatherName).trim().length < 2) {
-    errors.fatherName = 'Father Name is required.';
-  }
-  if (!payload.motherName || String(payload.motherName).trim().length < 2) {
-    errors.motherName = 'Mother Name is required.';
-  }
-
-  const dobCheck = validateDateOfBirth(payload.dob);
-  if (!dobCheck.valid) {
-    errors.dob = dobCheck.message;
+  if (!payload.fullName || String(payload.fullName).trim().length < 2) {
+    errors.fullName = 'Full Name is required (minimum 2 characters).';
   }
 
   if (!payload.gender || !VALID_GENDERS.includes(payload.gender)) {
@@ -170,48 +98,47 @@ export function validateMembershipApplication(payload) {
   }
 
   if (!isValidMobile(payload.mobile)) {
-    errors.mobile = 'Enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.';
-  }
-
-  if (payload.alternateMobile && String(payload.alternateMobile).trim() !== '') {
-    if (!isValidMobile(payload.alternateMobile)) {
-      errors.alternateMobile = 'Alternate Mobile Number must be a valid 10-digit number.';
-    } else if (String(payload.alternateMobile).trim() === String(payload.mobile).trim()) {
-      errors.alternateMobile = 'Alternate Mobile Number cannot be identical to Primary Mobile Number.';
-    }
+    errors.mobile = 'Enter a valid 10-digit mobile number starting with 6, 7, 8, or 9.';
   }
 
   if (!isValidEmail(payload.email)) {
-    errors.email = 'Please enter a valid email address.';
+    errors.email = 'Please enter a valid Email Address.';
   }
 
-  // Address checks
-  if (!payload.houseNo || String(payload.houseNo).trim().length < 1) {
-    errors.houseNo = 'House / Door Number is required.';
-  }
-  if (!payload.street || String(payload.street).trim().length < 2) {
-    errors.street = 'Street / Colony Name is required.';
-  }
-  if (!payload.gramamName || String(payload.gramamName).trim().length < 2) {
-    errors.gramamName = 'Village / Gramam / Ward name is required.';
-  }
-  if (!payload.districtId) {
-    errors.districtId = 'Please select a District.';
-  }
-  if (!payload.constitutionId) {
-    errors.constitutionId = 'Please select a Constitution (Assembly Constituency).';
-  }
-  if (!payload.mandalId) {
-    errors.mandalId = 'Please select a Mandal.';
-  }
   if (!isValidPincode(payload.pincode)) {
-    errors.pincode = 'Enter a valid 6-digit Pincode.';
+    errors.pincode = 'Enter a valid 6-digit PinCode.';
   }
 
-  // ID Details checks
-  const idCheck = validateGovernmentId(payload.idType, payload.idNumber);
-  if (!idCheck.valid) {
-    errors.idNumber = idCheck.message;
+  const teamType = payload.memberTeamType ? String(payload.memberTeamType).trim() : '';
+  if (!teamType) {
+    errors.memberTeamType = 'Please select a Team Type.';
+  } else {
+    if (!payload.stateName || !String(payload.stateName).trim()) {
+      errors.stateName = 'Please select a State.';
+    }
+
+    if (
+      ['District', 'Constituency', 'Mandal Main', 'Mandal Youth', 'Mandal Mahila'].includes(
+        teamType
+      ) &&
+      (!payload.districtName || !String(payload.districtName).trim())
+    ) {
+      errors.districtName = 'Please select a District.';
+    }
+
+    if (
+      ['Constituency', 'Mandal Main', 'Mandal Youth', 'Mandal Mahila'].includes(teamType) &&
+      (!payload.constitutionName || !String(payload.constitutionName).trim())
+    ) {
+      errors.constitutionName = 'Please select a Constituency.';
+    }
+
+    if (
+      ['Mandal Main', 'Mandal Youth', 'Mandal Mahila'].includes(teamType) &&
+      (!payload.mandalName || !String(payload.mandalName).trim())
+    ) {
+      errors.mandalName = 'Please select a Mandal.';
+    }
   }
 
   return {

@@ -1,80 +1,109 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { UserCheck, MapPin, CreditCard, Upload, CheckCircle2, AlertCircle } from 'lucide-react';
-import { VALID_GENDERS, VALID_ID_TYPES } from '@/lib/validation';
+import { useState, useRef, useEffect } from 'react';
+import {
+  UserCheck,
+  Upload,
+  CheckCircle2,
+  AlertCircle,
+  Search,
+  ChevronDown,
+  MapPin,
+} from 'lucide-react';
+import { VALID_GENDERS, MEMBER_TEAM_TYPE_OPTIONS } from '@/lib/validation';
+import { AP_COMPLETE_HIERARCHY } from '@/lib/apHierarchyData';
 
 export default function MemberForm({
-  hierarchy,
   isAdminMode = false,
   onSuccess = null,
 }) {
-  const districts = hierarchy?.districts || [];
-  const allConstitutions = hierarchy?.constitutions || [];
-  const allMandals = hierarchy?.mandals || [];
+  const defaultDistrict = AP_COMPLETE_HIERARCHY[0]?.district || '';
+  const defaultConstituency =
+    AP_COMPLETE_HIERARCHY[0]?.constituencies[0]?.name || '';
+  const defaultMandal =
+    AP_COMPLETE_HIERARCHY[0]?.constituencies[0]?.mandals[0] || '';
 
   const [formData, setFormData] = useState({
     fullName: '',
-    fatherName: '',
-    motherName: '',
-    dob: '',
     gender: 'Male',
     mobile: '',
-    alternateMobile: '',
     email: '',
+    passportNumber: '',
     photoUrl: '',
-    houseNo: '',
-    street: '',
-    gramamName: '',
-    districtId: districts[0]?.id || '',
-    constitutionId: '',
-    mandalId: '',
-    stateName: 'Andhra Pradesh',
     pincode: '',
-    idType: 'Aadhaar Card',
-    idNumber: '',
-    remarks: '',
+    memberTeamType: 'State',
+    stateName: 'Andhra Pradesh',
+    districtName: defaultDistrict,
+    constitutionName: defaultConstituency,
+    mandalName: defaultMandal,
     autoApprove: isAdminMode,
   });
+
+  // Searchable Team Type Dropdown State (matching screenshot)
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [teamSearch, setTeamSearch] = useState('');
+  const [hoveredOption, setHoveredOption] = useState('State');
+  const dropdownRef = useRef(null);
 
   const [errors, setErrors] = useState({});
   const [serverError, setServerError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submittedRecord, setSubmittedRecord] = useState(null);
 
-  // Filter Constitutions by selected District
-  const availableConstitutions = allConstitutions.filter(
-    (c) => c.districtId === formData.districtId
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Derive active District object from AP_COMPLETE_HIERARCHY
+  const selectedDistrictObj =
+    AP_COMPLETE_HIERARCHY.find((d) => d.district === formData.districtName) ||
+    AP_COMPLETE_HIERARCHY[0];
+
+  // Derive Constituencies for the selected District
+  const availableConstituencies = selectedDistrictObj?.constituencies || [];
+
+  // Derive active Constituency object
+  const selectedConstituencyObj =
+    availableConstituencies.find((c) => c.name === formData.constitutionName) ||
+    availableConstituencies[0];
+
+  // Derive Mandals for the selected Constituency
+  const availableMandals = selectedConstituencyObj?.mandals || [];
+
+  const filteredTeamOptions = MEMBER_TEAM_TYPE_OPTIONS.filter((opt) =>
+    opt.toLowerCase().includes(teamSearch.trim().toLowerCase())
   );
 
-  // Filter Mandals by selected Constitution
-  const availableMandals = allMandals.filter(
-    (m) => m.constitutionId === formData.constitutionId
-  );
-
-  useEffect(() => {
-    if (formData.districtId) {
-      const matchingConst = allConstitutions.filter((c) => c.districtId === formData.districtId);
-      const firstConstId = matchingConst[0]?.id || '';
-      setFormData((prev) => ({
-        ...prev,
-        constitutionId: firstConstId,
-      }));
-    }
-  }, [formData.districtId]);
-
-  useEffect(() => {
-    if (formData.constitutionId) {
-      const matchingMandals = allMandals.filter(
-        (m) => m.constitutionId === formData.constitutionId
-      );
-      const firstMandalId = matchingMandals[0]?.id || '';
-      setFormData((prev) => ({
-        ...prev,
-        mandalId: firstMandalId,
-      }));
-    }
-  }, [formData.constitutionId]);
+  // Determine which cascading dropdowns to show based on Team Type:
+  // - State -> 1 dropdown (State)
+  // - District -> 2 dropdowns (State, District)
+  // - Constituency -> 3 dropdowns (State, District, Constituency)
+  // - Mandal Main / Mandal Youth / Mandal Mahila -> 4 dropdowns (State, District, Constituency, Mandal)
+  const showStateDropdown = Boolean(formData.memberTeamType);
+  const showDistrictDropdown = [
+    'District',
+    'Constituency',
+    'Mandal Main',
+    'Mandal Youth',
+    'Mandal Mahila',
+  ].includes(formData.memberTeamType);
+  const showConstituencyDropdown = [
+    'Constituency',
+    'Mandal Main',
+    'Mandal Youth',
+    'Mandal Mahila',
+  ].includes(formData.memberTeamType);
+  const showMandalDropdown = [
+    'Mandal Main',
+    'Mandal Youth',
+    'Mandal Mahila',
+  ].includes(formData.memberTeamType);
 
   function handleChange(e) {
     const { name, value, type, checked } = e.target;
@@ -84,6 +113,64 @@ export default function MemberForm({
     }));
     if (errors[name]) {
       setErrors((prev) => ({ ...prev, [name]: '' }));
+    }
+  }
+
+  function handleDistrictChange(e) {
+    const newDistrictName = e.target.value;
+    const distObj = AP_COMPLETE_HIERARCHY.find(
+      (d) => d.district === newDistrictName
+    );
+    const firstConstObj = distObj?.constituencies?.[0] || null;
+    const firstMandalName = firstConstObj?.mandals?.[0] || '';
+
+    setFormData((prev) => ({
+      ...prev,
+      districtName: newDistrictName,
+      constitutionName: firstConstObj ? firstConstObj.name : '',
+      mandalName: firstMandalName,
+    }));
+    setErrors((prev) => ({
+      ...prev,
+      districtName: '',
+      constitutionName: '',
+      mandalName: '',
+    }));
+  }
+
+  function handleConstituencyChange(e) {
+    const newConstName = e.target.value;
+    const constObj = availableConstituencies.find(
+      (c) => c.name === newConstName
+    );
+    const firstMandalName = constObj?.mandals?.[0] || '';
+
+    setFormData((prev) => ({
+      ...prev,
+      constitutionName: newConstName,
+      mandalName: firstMandalName,
+    }));
+    setErrors((prev) => ({
+      ...prev,
+      constitutionName: '',
+      mandalName: '',
+    }));
+  }
+
+  function handleSelectTeamType(option) {
+    setFormData((prev) => ({
+      ...prev,
+      memberTeamType: option,
+      stateName: 'Andhra Pradesh',
+      districtName: prev.districtName || defaultDistrict,
+      constitutionName: prev.constitutionName || defaultConstituency,
+      mandalName: prev.mandalName || defaultMandal,
+    }));
+    setHoveredOption(option);
+    setDropdownOpen(false);
+    setTeamSearch('');
+    if (errors.memberTeamType) {
+      setErrors((prev) => ({ ...prev, memberTeamType: '' }));
     }
   }
 
@@ -144,7 +231,7 @@ export default function MemberForm({
 
   if (submittedRecord && !isAdminMode) {
     return (
-      <div className="card" style={{ borderTop: '4px solid var(--success)', maxWidth: '760px', margin: '0 auto' }}>
+      <div className="card" style={{ borderTop: '4px solid var(--success)', maxWidth: '720px', margin: '0 auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
           <CheckCircle2 size={36} color="var(--success)" />
           <div>
@@ -180,13 +267,21 @@ export default function MemberForm({
               </div>
             </div>
             <div>
-              <span style={{ color: 'var(--text-muted)' }}>Applicant Full Name:</span>
+              <span style={{ color: 'var(--text-muted)' }}>Full Name:</span>
               <div style={{ fontWeight: 600 }}>{submittedRecord.fullName}</div>
             </div>
             <div>
-              <span style={{ color: 'var(--text-muted)' }}>Location Hierarchy:</span>
+              <span style={{ color: 'var(--text-muted)' }}>Team Type &amp; Jurisdiction:</span>
               <div style={{ fontWeight: 600 }}>
-                {submittedRecord.gramamName}, {submittedRecord.mandalName}, {submittedRecord.constitutionName}, {submittedRecord.districtName}
+                {formData.memberTeamType} —{' '}
+                {[
+                  showMandalDropdown ? formData.mandalName : null,
+                  showConstituencyDropdown ? formData.constitutionName : null,
+                  showDistrictDropdown ? formData.districtName : null,
+                  formData.stateName,
+                ]
+                  .filter(Boolean)
+                  .join(' › ')}
               </div>
             </div>
           </div>
@@ -207,19 +302,11 @@ export default function MemberForm({
               setFormData((prev) => ({
                 ...prev,
                 fullName: '',
-                fatherName: '',
-                motherName: '',
-                dob: '',
                 mobile: '',
-                alternateMobile: '',
                 email: '',
+                passportNumber: '',
                 photoUrl: '',
-                houseNo: '',
-                street: '',
-                gramamName: '',
                 pincode: '',
-                idNumber: '',
-                remarks: '',
               }));
             }}
           >
@@ -234,7 +321,7 @@ export default function MemberForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="card" noValidate>
+    <form onSubmit={handleSubmit} className="card" style={{ maxWidth: '860px', margin: '0 auto' }} noValidate>
       {serverError && (
         <div className="alert alert-error">
           <AlertCircle size={18} style={{ flexShrink: 0, marginTop: '2px' }} />
@@ -242,24 +329,24 @@ export default function MemberForm({
         </div>
       )}
 
-      {/* 1. PERSONAL DETAILS */}
       <div className="form-section">
         <div className="form-section-title">
           <UserCheck size={18} />
-          <span>1. Personal Details</span>
+          <span>Member Registration Details</span>
         </div>
 
-        <div className="form-grid">
+        <div className="form-grid-2">
+          {/* 1. Full Name */}
           <div className="form-group">
             <label className="form-label" htmlFor="fullName">
-              Full Name (పూర్తి పేరు) <span className="required-star">*</span>
+              Full Name <span className="required-star">*</span>
             </label>
             <input
               id="fullName"
               name="fullName"
               type="text"
               className="form-control"
-              placeholder="Enter full name as per ID"
+              placeholder="Enter Full Name"
               value={formData.fullName}
               onChange={handleChange}
               required
@@ -267,59 +354,10 @@ export default function MemberForm({
             {errors.fullName && <span className="form-error">{errors.fullName}</span>}
           </div>
 
-          <div className="form-group">
-            <label className="form-label" htmlFor="fatherName">
-              Father Name (తండ్రి పేరు) <span className="required-star">*</span>
-            </label>
-            <input
-              id="fatherName"
-              name="fatherName"
-              type="text"
-              className="form-control"
-              placeholder="Enter father's full name"
-              value={formData.fatherName}
-              onChange={handleChange}
-              required
-            />
-            {errors.fatherName && <span className="form-error">{errors.fatherName}</span>}
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="motherName">
-              Mother Name (తల్లి పేరు) <span className="required-star">*</span>
-            </label>
-            <input
-              id="motherName"
-              name="motherName"
-              type="text"
-              className="form-control"
-              placeholder="Enter mother's full name"
-              value={formData.motherName}
-              onChange={handleChange}
-              required
-            />
-            {errors.motherName && <span className="form-error">{errors.motherName}</span>}
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="dob">
-              Date of Birth (పుట్టిన తేదీ) <span className="required-star">*</span>
-            </label>
-            <input
-              id="dob"
-              name="dob"
-              type="date"
-              className="form-control"
-              value={formData.dob}
-              onChange={handleChange}
-              required
-            />
-            {errors.dob && <span className="form-error">{errors.dob}</span>}
-          </div>
-
+          {/* 2. Gender */}
           <div className="form-group">
             <label className="form-label" htmlFor="gender">
-              Gender (లింగం) <span className="required-star">*</span>
+              Gender <span className="required-star">*</span>
             </label>
             <select
               id="gender"
@@ -327,6 +365,7 @@ export default function MemberForm({
               className="form-control"
               value={formData.gender}
               onChange={handleChange}
+              required
             >
               {VALID_GENDERS.map((g) => (
                 <option key={g} value={g}>
@@ -337,9 +376,10 @@ export default function MemberForm({
             {errors.gender && <span className="form-error">{errors.gender}</span>}
           </div>
 
+          {/* 3. Mobile Number */}
           <div className="form-group">
             <label className="form-label" htmlFor="mobile">
-              Mobile Number (మొబైల్ నంబర్) <span className="required-star">*</span>
+              Mobile Number <span className="required-star">*</span>
             </label>
             <input
               id="mobile"
@@ -347,7 +387,7 @@ export default function MemberForm({
               type="tel"
               maxLength={10}
               className="form-control"
-              placeholder="10-digit mobile number"
+              placeholder="10-digit Mobile Number"
               value={formData.mobile}
               onChange={handleChange}
               required
@@ -355,53 +395,48 @@ export default function MemberForm({
             {errors.mobile && <span className="form-error">{errors.mobile}</span>}
           </div>
 
-          <div className="form-group">
-            <label className="form-label" htmlFor="alternateMobile">
-              Alternate Mobile Number
-            </label>
-            <input
-              id="alternateMobile"
-              name="alternateMobile"
-              type="tel"
-              maxLength={10}
-              className="form-control"
-              placeholder="Optional secondary number"
-              value={formData.alternateMobile}
-              onChange={handleChange}
-            />
-            {errors.alternateMobile && <span className="form-error">{errors.alternateMobile}</span>}
-          </div>
-
+          {/* 4. Email Address */}
           <div className="form-group">
             <label className="form-label" htmlFor="email">
-              Email Address
+              Email Address <span className="required-star">*</span>
             </label>
             <input
               id="email"
               name="email"
               type="email"
               className="form-control"
-              placeholder="name@example.com (Optional)"
+              placeholder="Enter Email Address"
               value={formData.email}
               onChange={handleChange}
+              required
             />
             {errors.email && <span className="form-error">{errors.email}</span>}
           </div>
 
+          {/* 5. Passport (Photo / Details) */}
           <div className="form-group">
-            <label className="form-label" htmlFor="photoUpload">
-              Member Passport Photo
+            <label className="form-label" htmlFor="passportUpload">
+              Passport (Photo / ID)
             </label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <input
+                id="passportNumber"
+                name="passportNumber"
+                type="text"
+                className="form-control"
+                placeholder="Passport No. (or upload photo)"
+                value={formData.passportNumber}
+                onChange={handleChange}
+              />
               <label
-                htmlFor="photoUpload"
+                htmlFor="passportUpload"
                 className="btn btn-outline btn-sm"
-                style={{ cursor: 'pointer', flex: 1 }}
+                style={{ cursor: 'pointer', flexShrink: 0 }}
               >
-                <Upload size={14} /> Upload Photo
+                <Upload size={14} /> Photo
               </label>
               <input
-                id="photoUpload"
+                id="passportUpload"
                 type="file"
                 accept="image/*"
                 onChange={handlePhotoUpload}
@@ -410,165 +445,25 @@ export default function MemberForm({
               {formData.photoUrl && (
                 <img
                   src={formData.photoUrl}
-                  alt="Preview"
+                  alt="Passport Preview"
                   style={{
                     width: '38px',
                     height: '38px',
                     borderRadius: '6px',
                     objectFit: 'cover',
                     border: '1px solid var(--border-strong)',
+                    flexShrink: 0,
                   }}
                 />
               )}
             </div>
             {errors.photoUrl && <span className="form-error">{errors.photoUrl}</span>}
           </div>
-        </div>
-      </div>
 
-      {/* 2. ADDRESS & ORGANIZATIONAL HIERARCHY DETAILS */}
-      <div className="form-section">
-        <div className="form-section-title">
-          <MapPin size={18} />
-          <span>2. Address &amp; Organizational Jurisdiction</span>
-        </div>
-
-        <div className="form-grid">
-          <div className="form-group">
-            <label className="form-label" htmlFor="stateName">
-              State (రాష్ట్రం) <span className="required-star">*</span>
-            </label>
-            <input
-              id="stateName"
-              name="stateName"
-              type="text"
-              className="form-control"
-              value="Andhra Pradesh"
-              readOnly
-            />
-            <span className="form-hint">Currently active for Andhra Pradesh State</span>
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="districtId">
-              District (జిల్లా) <span className="required-star">*</span>
-            </label>
-            <select
-              id="districtId"
-              name="districtId"
-              className="form-control"
-              value={formData.districtId}
-              onChange={handleChange}
-              required
-            >
-              <option value="">-- Select District --</option>
-              {districts.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name} ({d.code})
-                </option>
-              ))}
-            </select>
-            {errors.districtId && <span className="form-error">{errors.districtId}</span>}
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="constitutionId">
-              Constitution (నియోజకవర్గం) <span className="required-star">*</span>
-            </label>
-            <select
-              id="constitutionId"
-              name="constitutionId"
-              className="form-control"
-              value={formData.constitutionId}
-              onChange={handleChange}
-              required
-            >
-              <option value="">-- Select Constitution --</option>
-              {availableConstitutions.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} ({c.code})
-                </option>
-              ))}
-            </select>
-            {errors.constitutionId && <span className="form-error">{errors.constitutionId}</span>}
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="mandalId">
-              Mandal (మండలం) <span className="required-star">*</span>
-            </label>
-            <select
-              id="mandalId"
-              name="mandalId"
-              className="form-control"
-              value={formData.mandalId}
-              onChange={handleChange}
-              required
-            >
-              <option value="">-- Select Mandal --</option>
-              {availableMandals.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
-            {errors.mandalId && <span className="form-error">{errors.mandalId}</span>}
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="gramamName">
-              Village / Gramam (గ్రామం / వార్డు) <span className="required-star">*</span>
-            </label>
-            <input
-              id="gramamName"
-              name="gramamName"
-              type="text"
-              className="form-control"
-              placeholder="Enter Village / Gramam name"
-              value={formData.gramamName}
-              onChange={handleChange}
-              required
-            />
-            {errors.gramamName && <span className="form-error">{errors.gramamName}</span>}
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="houseNo">
-              House / Door Number (ఇంటి నంబర్) <span className="required-star">*</span>
-            </label>
-            <input
-              id="houseNo"
-              name="houseNo"
-              type="text"
-              className="form-control"
-              placeholder="e.g. 12-4-88/A"
-              value={formData.houseNo}
-              onChange={handleChange}
-              required
-            />
-            {errors.houseNo && <span className="form-error">{errors.houseNo}</span>}
-          </div>
-
-          <div className="form-group" style={{ gridColumn: 'span 2' }}>
-            <label className="form-label" htmlFor="street">
-              Street / Colony / Landmark (వీధి / కాలనీ) <span className="required-star">*</span>
-            </label>
-            <input
-              id="street"
-              name="street"
-              type="text"
-              className="form-control"
-              placeholder="Enter street name or locality"
-              value={formData.street}
-              onChange={handleChange}
-              required
-            />
-            {errors.street && <span className="form-error">{errors.street}</span>}
-          </div>
-
+          {/* 6. PinCode */}
           <div className="form-group">
             <label className="form-label" htmlFor="pincode">
-              Pincode (పిన్‌కోడ్) <span className="required-star">*</span>
+              PinCode <span className="required-star">*</span>
             </label>
             <input
               id="pincode"
@@ -576,7 +471,7 @@ export default function MemberForm({
               type="text"
               maxLength={6}
               className="form-control"
-              placeholder="6-digit Pincode"
+              placeholder="6-digit PinCode"
               value={formData.pincode}
               onChange={handleChange}
               required
@@ -586,71 +481,218 @@ export default function MemberForm({
         </div>
       </div>
 
-      {/* 3. GOVERNMENT ID DETAILS */}
+      {/* TEAM TYPE & DYNAMIC CASCADING HIERARCHY SECTION */}
       <div className="form-section">
         <div className="form-section-title">
-          <CreditCard size={18} />
-          <span>3. Identity Verification Details</span>
+          <MapPin size={18} />
+          <span>Team Type &amp; Andhra Pradesh Jurisdiction Selection</span>
         </div>
 
-        <div className="form-grid">
-          <div className="form-group">
-            <label className="form-label" htmlFor="idType">
-              ID Proof Type <span className="required-star">*</span>
+        <div className="form-grid-2">
+          {/* Searchable Team Type Dropdown */}
+          <div className="form-group" ref={dropdownRef} style={{ position: 'relative' }}>
+            <label className="form-label">
+              Select Team Type <span className="required-star">*</span>
             </label>
-            <select
-              id="idType"
-              name="idType"
+            <button
+              type="button"
+              onClick={() => setDropdownOpen((prev) => !prev)}
               className="form-control"
-              value={formData.idType}
-              onChange={handleChange}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                textAlign: 'left',
+                cursor: 'pointer',
+                background: '#ffffff',
+                fontWeight: 600,
+              }}
             >
-              {VALID_ID_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
+              <span>{formData.memberTeamType || 'Select Team Type'}</span>
+              <ChevronDown size={16} color="#64748b" />
+            </button>
+
+            {dropdownOpen && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 6px)',
+                  left: 0,
+                  width: '100%',
+                  minWidth: '280px',
+                  background: '#ffffff',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '14px',
+                  boxShadow:
+                    '0 10px 25px -5px rgba(15, 23, 42, 0.12), 0 8px 10px -6px rgba(15, 23, 42, 0.08)',
+                  padding: '10px',
+                  zIndex: 60,
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '10px',
+                    padding: '8px 12px',
+                    marginBottom: '8px',
+                  }}
+                >
+                  <Search size={16} color="#94a3b8" />
+                  <input
+                    type="text"
+                    placeholder="Search team type..."
+                    value={teamSearch}
+                    onChange={(e) => setTeamSearch(e.target.value)}
+                    autoFocus
+                    style={{
+                      border: 'none',
+                      outline: 'none',
+                      background: 'transparent',
+                      width: '100%',
+                      fontSize: '14px',
+                      color: '#0f172a',
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  {filteredTeamOptions.length === 0 ? (
+                    <div style={{ padding: '10px 14px', fontSize: '13px', color: '#94a3b8' }}>
+                      No matching team type found
+                    </div>
+                  ) : (
+                    filteredTeamOptions.map((option) => {
+                      const isHighlighted =
+                        hoveredOption === option || formData.memberTeamType === option;
+                      return (
+                        <div
+                          key={option}
+                          onMouseEnter={() => setHoveredOption(option)}
+                          onClick={() => handleSelectTeamType(option)}
+                          style={{
+                            padding: '10px 16px',
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            fontSize: '15px',
+                            fontWeight: formData.memberTeamType === option ? 600 : 400,
+                            color: '#0f172a',
+                            background: isHighlighted ? '#f3f4f6' : 'transparent',
+                            transition: 'background-color 0.12s',
+                          }}
+                        >
+                          {option}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
+
+            {errors.memberTeamType && (
+              <span className="form-error">{errors.memberTeamType}</span>
+            )}
           </div>
 
-          <div className="form-group">
-            <label className="form-label" htmlFor="idNumber">
-              ID Number <span className="required-star">*</span>
-            </label>
-            <input
-              id="idNumber"
-              name="idNumber"
-              type="text"
-              className="form-control"
-              placeholder={
-                formData.idType === 'Aadhaar Card'
-                  ? '12-digit Aadhaar Number'
-                  : 'Enter Government ID Number'
-              }
-              value={formData.idNumber}
-              onChange={handleChange}
-              required
-            />
-            <span className="form-hint">
-              Kept strictly confidential; never displayed publicly.
-            </span>
-            {errors.idNumber && <span className="form-error">{errors.idNumber}</span>}
-          </div>
+          {/* Dropdown 1: Select State (Always shown when any Team Type is selected) */}
+          {showStateDropdown && (
+            <div className="form-group">
+              <label className="form-label" htmlFor="stateName">
+                Select State <span className="required-star">*</span>
+              </label>
+              <select
+                id="stateName"
+                name="stateName"
+                className="form-control"
+                value={formData.stateName}
+                onChange={handleChange}
+                required
+              >
+                <option value="Andhra Pradesh">Andhra Pradesh</option>
+              </select>
+              {errors.stateName && <span className="form-error">{errors.stateName}</span>}
+            </div>
+          )}
 
-          <div className="form-group">
-            <label className="form-label" htmlFor="remarks">
-              Additional Remarks / Notes
-            </label>
-            <input
-              id="remarks"
-              name="remarks"
-              type="text"
-              className="form-control"
-              placeholder="Optional notes or volunteer interest"
-              value={formData.remarks}
-              onChange={handleChange}
-            />
-          </div>
+          {/* Dropdown 2: Select District (Shown when District, Constituency, or Mandal Main/Youth/Mahila is selected) */}
+          {showDistrictDropdown && (
+            <div className="form-group">
+              <label className="form-label" htmlFor="districtName">
+                Select District (Andhra Pradesh — 26 Districts) <span className="required-star">*</span>
+              </label>
+              <select
+                id="districtName"
+                name="districtName"
+                className="form-control"
+                value={formData.districtName}
+                onChange={handleDistrictChange}
+                required
+              >
+                {AP_COMPLETE_HIERARCHY.map((d) => (
+                  <option key={d.district} value={d.district}>
+                    {d.district}
+                  </option>
+                ))}
+              </select>
+              {errors.districtName && <span className="form-error">{errors.districtName}</span>}
+            </div>
+          )}
+
+          {/* Dropdown 3: Select Constituency (Shown when Constituency or Mandal Main/Youth/Mahila is selected) */}
+          {showConstituencyDropdown && (
+            <div className="form-group">
+              <label className="form-label" htmlFor="constitutionName">
+                Select Constituency ({formData.districtName} District){' '}
+                <span className="required-star">*</span>
+              </label>
+              <select
+                id="constitutionName"
+                name="constitutionName"
+                className="form-control"
+                value={formData.constitutionName}
+                onChange={handleConstituencyChange}
+                required
+              >
+                {availableConstituencies.map((c) => (
+                  <option key={c.name} value={c.name}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              {errors.constitutionName && (
+                <span className="form-error">{errors.constitutionName}</span>
+              )}
+            </div>
+          )}
+
+          {/* Dropdown 4: Select Mandal (Shown when Mandal Main, Mandal Youth, or Mandal Mahila is selected) */}
+          {showMandalDropdown && (
+            <div className="form-group">
+              <label className="form-label" htmlFor="mandalName">
+                Select Mandal ({formData.constitutionName} Constituency){' '}
+                <span className="required-star">*</span>
+              </label>
+              <select
+                id="mandalName"
+                name="mandalName"
+                className="form-control"
+                value={formData.mandalName}
+                onChange={handleChange}
+                required
+              >
+                {availableMandals.map((mName) => (
+                  <option key={mName} value={mName}>
+                    {mName}
+                  </option>
+                ))}
+              </select>
+              {errors.mandalName && <span className="form-error">{errors.mandalName}</span>}
+            </div>
+          )}
         </div>
       </div>
 
@@ -682,9 +724,9 @@ export default function MemberForm({
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
         <button type="submit" className="btn btn-primary btn-lg" disabled={submitting}>
           {submitting
-            ? 'Submitting Application...'
+            ? 'Submitting...'
             : isAdminMode
-            ? 'Register Member'
+            ? 'Add Member'
             : 'Submit Membership Application'}
         </button>
       </div>

@@ -1,7 +1,9 @@
 import { redirect } from 'next/navigation';
+import Link from 'next/link';
 import { getAdminSession } from '@/lib/auth';
 import Sidebar from '@/components/Sidebar';
-import { ShieldCheck } from 'lucide-react';
+import AdminLogoutButton from '@/components/AdminLogoutButton';
+import { ShieldCheck, Globe } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,8 +29,12 @@ export default async function AdminLayout({ children }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '13px' }}>
             <span className="badge badge-active">State: Andhra Pradesh</span>
             <span style={{ color: 'var(--text-secondary)' }}>
-              Role: <strong>{admin.role}</strong>
+              Admin: <strong>{admin.fullName || admin.username}</strong>
             </span>
+            <Link href="/" className="btn btn-outline btn-sm">
+              <Globe size={14} /> Public Site
+            </Link>
+            <AdminLogoutButton />
           </div>
         </header>
 

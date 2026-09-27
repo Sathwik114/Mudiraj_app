@@ -9,19 +9,9 @@ import { generateNextMembershipId } from './membershipId.js';
 import { maskIdNumber } from './validation.js';
 
 /**
- * Member & Application Repository Layer (`lib/members.js`)
- * --------------------------------------------------------
- * Supports 2,000,000+ (20 Lakh+) design capacity via:
- * - Server-side pagination (`page`, `limit`)
- * - Server-side search (by Membership ID, Name, Mobile, Application No)
- * - Server-side multi-attribute filtering (District, Constitution, Mandal, Status, Team, Position)
- * - Server-side sorting
- * - Unique Membership ID generation ONLY on application approval
+ * Member & Application Repository Layer (`src/lib/members.js`)
  */
 
-/**
- * Enriches a member record with their active leadership assignments.
- */
 export function enrichMemberWithLeadership(member, db = getDatabase(), { maskSensitiveId = false } = {}) {
   const assignments = db.teamMembers
     .filter((tm) => tm.memberId === member.id && tm.status === 'Active')
@@ -41,15 +31,12 @@ export function enrichMemberWithLeadership(member, db = getDatabase(), { maskSen
 
   return {
     ...member,
+    memberTeamType: member.memberTeamType || 'State',
     idNumber: maskSensitiveId ? maskIdNumber(member.idNumber) : member.idNumber,
     leadershipPositions: assignments,
   };
 }
 
-/**
- * Server-side paginated, searched, filtered, and sorted member query.
- * Never returns the entire dataset unpaginated to the browser.
- */
 export function queryMembersPaginated({
   page = 1,
   limit = 15,
@@ -68,7 +55,6 @@ export function queryMembersPaginated({
   const safePage = Math.max(1, parseInt(page, 10) || 1);
   const safeLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 15));
 
-  // Pre-build a map of memberId -> team assignments if filtering by teamType or positionCode
   const memberAssignmentsMap = new Map();
   db.teamMembers.forEach((tm) => {
     if (tm.status !== 'Active') return;
@@ -88,29 +74,50 @@ export function queryMembersPaginated({
 
   const filtered = db.members.filter((m) => {
     if (status && m.status !== status) return false;
-    if (districtId && m.districtId !== districtId) return false;
-    if (constitutionId && m.constitutionId !== constitutionId) return false;
-    if (mandalId && m.mandalId !== mandalId) return false;
+    if (districtId && m.districtId !== districtId && m.districtName !== districtId) return false;
+    if (constitutionId && m.constitutionId !== constitutionId && m.constitutionName !== constitutionId) return false;
+    if (mandalId && m.mandalId !== mandalId && m.mandalName !== mandalId) return false;
 
     if (teamType || positionCode) {
       const mAssigns = memberAssignmentsMap.get(m.id) || [];
-      if (mAssigns.length === 0) return false;
-      const matchesTeamAndPos = mAssigns.some((a) => {
-        if (teamType && a.teamType !== teamType) return false;
-        if (positionCode && a.positionCode !== positionCode) return false;
-        return true;
-      });
-      if (!matchesTeamAndPos) return false;
+      const matchesMemberTeamType =
+        teamType &&
+        (m.memberTeamType || 'State').toLowerCase() === teamType.toLowerCase();
+
+      if (!matchesMemberTeamType) {
+        if (mAssigns.length === 0) return false;
+        const matchesTeamAndPos = mAssigns.some((a) => {
+          if (teamType && a.teamType !== teamType) return false;
+          if (positionCode && a.positionCode !== positionCode) return false;
+          return true;
+        });
+        if (!matchesTeamAndPos) return false;
+      }
     }
 
     if (q) {
       const matchMid = (m.membershipId || '').toLowerCase().includes(q);
       const matchAppNo = (m.applicationNo || '').toLowerCase().includes(q);
       const matchName = (m.fullName || '').toLowerCase().includes(q);
-      const matchFather = (m.fatherName || '').toLowerCase().includes(q);
       const matchMobile = (m.mobile || '').includes(q);
-      const matchVillage = (m.gramamName || '').toLowerCase().includes(q);
-      if (!matchMid && !matchAppNo && !matchName && !matchFather && !matchMobile && !matchVillage) {
+      const matchEmail = (m.email || '').toLowerCase().includes(q);
+      const matchPincode = (m.pincode || '').includes(q);
+      const matchTeamType = (m.memberTeamType || '').toLowerCase().includes(q);
+      const matchDistrict = (m.districtName || '').toLowerCase().includes(q);
+      const matchConst = (m.constitutionName || '').toLowerCase().includes(q);
+      const matchMandal = (m.mandalName || '').toLowerCase().includes(q);
+      if (
+        !matchMid &&
+        !matchAppNo &&
+        !matchName &&
+        !matchMobile &&
+        !matchEmail &&
+        !matchPincode &&
+        !matchTeamType &&
+        !matchDistrict &&
+        !matchConst &&
+        !matchMandal
+      ) {
         return false;
       }
     }
@@ -118,7 +125,6 @@ export function queryMembersPaginated({
     return true;
   });
 
-  // Sort records on the server
   filtered.sort((a, b) => {
     let valA = a[sortBy] || '';
     let valB = b[sortBy] || '';
@@ -153,9 +159,6 @@ export function queryMembersPaginated({
   };
 }
 
-/**
- * Gets a single member by database ID, Membership ID, Application No, or Mobile.
- */
 export function getMemberById(id, { maskSensitiveId = false } = {}) {
   const db = getDatabase();
   const member = db.members.find(
@@ -165,10 +168,6 @@ export function getMemberById(id, { maskSensitiveId = false } = {}) {
   return enrichMemberWithLeadership(member, db, { maskSensitiveId });
 }
 
-/**
- * Public Status Lookup (by Membership ID, Application No, or Mobile Number).
- * Strictly strips/masks sensitive ID numbers before returning to public callers!
- */
 export function lookupPublicMembershipStatus(query) {
   if (!query || !String(query).trim()) return null;
   const q = String(query).trim().toUpperCase();
@@ -187,31 +186,27 @@ export function lookupPublicMembershipStatus(query) {
     applicationNo: member.applicationNo,
     membershipId: member.membershipId,
     fullName: member.fullName,
-    fatherName: member.fatherName,
     gender: member.gender,
-    districtName: member.districtName,
-    constitutionName: member.constitutionName,
-    mandalName: member.mandalName,
-    gramamName: member.gramamName,
-    stateName: member.stateName,
+    email: member.email,
+    pincode: member.pincode,
+    memberTeamType: member.memberTeamType || 'State',
+    stateName: member.stateName || 'Andhra Pradesh',
+    districtName: member.districtName || '',
+    constitutionName: member.constitutionName || '',
+    mandalName: member.mandalName || '',
     status: member.status,
     applicationDate: member.applicationDate,
     approvalDate: member.approvalDate,
     remarks: member.remarks,
-    // Sensitive ID number and full contact info intentionally omitted/masked for public privacy
-    maskedIdNumber: maskIdNumber(member.idNumber),
-    idType: member.idType,
+    maskedIdNumber: maskIdNumber(member.passportNumber || member.idNumber),
+    idType: member.idType || 'Passport',
   };
 }
 
-/**
- * Creates a new Membership Application (from Public Website or Admin Direct Registration).
- */
 export function createMembershipApplication(payload, { autoApprove = false, actor = 'public' } = {}) {
   const db = getDatabase();
   const cleanedMobile = String(payload.mobile).trim();
 
-  // Check duplicate mobile number among Pending/Approved/Active members
   const duplicateMobile = db.members.find(
     (m) => m.mobile === cleanedMobile && m.status !== 'Rejected'
   );
@@ -223,14 +218,20 @@ export function createMembershipApplication(payload, { autoApprove = false, acto
     );
   }
 
-  const district = db.districts.find((d) => d.id === payload.districtId);
-  const constitution = db.constitutions.find((c) => c.id === payload.constitutionId);
-  const mandal = db.mandals.find((m) => m.id === payload.mandalId);
-  const gramam = payload.gramamId ? db.gramams.find((g) => g.id === payload.gramamId) : null;
+  const teamType = payload.memberTeamType ? String(payload.memberTeamType).trim() : 'State';
+  const stateName = payload.stateName ? String(payload.stateName).trim() : 'Andhra Pradesh';
 
-  if (!district || !constitution || !mandal) {
-    throw new Error('Selected District, Constitution, and Mandal must be valid.');
-  }
+  const districtName = ['District', 'Constituency', 'Mandal Main', 'Mandal Youth', 'Mandal Mahila'].includes(teamType)
+    ? String(payload.districtName || '').trim()
+    : '';
+
+  const constitutionName = ['Constituency', 'Mandal Main', 'Mandal Youth', 'Mandal Mahila'].includes(teamType)
+    ? String(payload.constitutionName || '').trim()
+    : '';
+
+  const mandalName = ['Mandal Main', 'Mandal Youth', 'Mandal Mahila'].includes(teamType)
+    ? String(payload.mandalName || '').trim()
+    : '';
 
   const nextAppSeq = dbAdapter.incrementSequence('applicationNo');
   const applicationNo = `APP-2026-${String(nextAppSeq).padStart(4, '0')}`;
@@ -248,34 +249,42 @@ export function createMembershipApplication(payload, { autoApprove = false, acto
     approvedBy = actor;
   }
 
+  const locationSummary = [mandalName, constitutionName, districtName, stateName]
+    .filter(Boolean)
+    .join(' › ');
+
   const newMember = {
     id: generateUuid('mem'),
     applicationNo,
     membershipId,
     fullName: String(payload.fullName).trim(),
-    fatherName: String(payload.fatherName).trim(),
-    motherName: String(payload.motherName).trim(),
-    dob: payload.dob,
+    fatherName: '',
+    motherName: '',
+    dob: '',
     gender: payload.gender,
     mobile: cleanedMobile,
-    alternateMobile: payload.alternateMobile ? String(payload.alternateMobile).trim() : '',
+    alternateMobile: '',
     email: payload.email ? String(payload.email).trim() : '',
     photoUrl: payload.photoUrl || '',
-    houseNo: String(payload.houseNo).trim(),
-    street: String(payload.street).trim(),
-    gramamId: gramam ? gramam.id : null,
-    gramamName: gramam ? gramam.name : String(payload.gramamName || '').trim(),
-    mandalId: mandal.id,
-    mandalName: mandal.name,
-    constitutionId: constitution.id,
-    constitutionName: constitution.name,
-    districtId: district.id,
-    districtName: district.name,
+    passportNumber: payload.passportNumber ? String(payload.passportNumber).trim().toUpperCase() : '',
+    memberTeamType: teamType,
     stateId: 'state-ap',
-    stateName: 'Andhra Pradesh',
+    stateName,
+    districtId: districtName,
+    districtName,
+    constitutionId: constitutionName,
+    constitutionName,
+    mandalId: mandalName,
+    mandalName,
+    gramamId: null,
+    gramamName: '',
+    houseNo: '',
+    street: '',
     pincode: String(payload.pincode).trim(),
-    idType: payload.idType,
-    idNumber: String(payload.idNumber).trim().toUpperCase(),
+    idType: 'Passport',
+    idNumber: payload.passportNumber
+      ? String(payload.passportNumber).trim().toUpperCase()
+      : 'PASSPORT-VERIFIED',
     status,
     applicationDate: now,
     approvalDate,
@@ -283,8 +292,8 @@ export function createMembershipApplication(payload, { autoApprove = false, acto
     remarks:
       payload.remarks ||
       (autoApprove
-        ? 'Directly registered and approved by Administrator'
-        : 'Application submitted via Public Portal - Pending Admin Review'),
+        ? `Directly registered (${teamType}: ${locationSummary})`
+        : `Submitted via Public Portal (${teamType}: ${locationSummary}) - Pending Review`),
     createdAt: now,
     updatedAt: now,
   };
@@ -298,18 +307,13 @@ export function createMembershipApplication(payload, { autoApprove = false, acto
     entityId: newMember.id,
     actor,
     details: autoApprove
-      ? `Admin registered & approved ${newMember.fullName} with Membership ID ${newMember.membershipId}.`
-      : `Public membership application ${newMember.applicationNo} submitted by ${newMember.fullName} (${newMember.districtName}).`,
+      ? `Admin registered & approved ${newMember.fullName} (${teamType} - ${locationSummary}) with Membership ID ${newMember.membershipId}.`
+      : `Public membership application ${newMember.applicationNo} submitted by ${newMember.fullName} (${teamType} - ${locationSummary}).`,
   });
 
   return newMember;
 }
 
-/**
- * Approves a Pending (or Rejected) Membership Application:
- * - Generates a unique permanent Membership ID (MUD-00000001+) if not already assigned
- * - Sets status to 'Active' (as specified in the workflow: "Generate Unique Membership ID -> Member Status = Active")
- */
 export function approveMembershipApplication({
   memberId,
   remarks = '',
@@ -347,9 +351,6 @@ export function approveMembershipApplication({
   return enrichMemberWithLeadership(member, db);
 }
 
-/**
- * Rejects a Membership Application with admin remarks.
- */
 export function rejectMembershipApplication({ memberId, remarks = '', actor = 'admin' }) {
   const db = getDatabase();
   const member = db.members.find((m) => m.id === memberId);
@@ -376,9 +377,6 @@ export function rejectMembershipApplication({ memberId, remarks = '', actor = 'a
   return enrichMemberWithLeadership(member, db);
 }
 
-/**
- * Updates an existing Member's details or status.
- */
 export function updateMemberRecord({ memberId, updates, actor = 'admin' }) {
   const db = getDatabase();
   const member = db.members.find((m) => m.id === memberId);
@@ -386,20 +384,17 @@ export function updateMemberRecord({ memberId, updates, actor = 'admin' }) {
 
   const editableFields = [
     'fullName',
-    'fatherName',
-    'motherName',
-    'dob',
     'gender',
     'mobile',
-    'alternateMobile',
     'email',
     'photoUrl',
-    'houseNo',
-    'street',
-    'gramamName',
+    'passportNumber',
+    'memberTeamType',
+    'stateName',
+    'districtName',
+    'constitutionName',
+    'mandalName',
     'pincode',
-    'idType',
-    'idNumber',
     'remarks',
   ];
 
@@ -409,29 +404,6 @@ export function updateMemberRecord({ memberId, updates, actor = 'admin' }) {
     }
   });
 
-  if (updates.districtId && updates.districtId !== member.districtId) {
-    const dist = db.districts.find((d) => d.id === updates.districtId);
-    if (dist) {
-      member.districtId = dist.id;
-      member.districtName = dist.name;
-    }
-  }
-  if (updates.constitutionId && updates.constitutionId !== member.constitutionId) {
-    const c = db.constitutions.find((x) => x.id === updates.constitutionId);
-    if (c) {
-      member.constitutionId = c.id;
-      member.constitutionName = c.name;
-    }
-  }
-  if (updates.mandalId && updates.mandalId !== member.mandalId) {
-    const mnd = db.mandals.find((x) => x.id === updates.mandalId);
-    if (mnd) {
-      member.mandalId = mnd.id;
-      member.mandalName = mnd.name;
-    }
-  }
-
-  // If transitioning to Approved or Active and no Membership ID exists yet, generate one!
   if (updates.status && updates.status !== member.status) {
     if (['Approved', 'Active'].includes(updates.status) && !member.membershipId) {
       member.membershipId = generateNextMembershipId(dbAdapter);
@@ -439,8 +411,6 @@ export function updateMemberRecord({ memberId, updates, actor = 'admin' }) {
       member.approvedBy = actor;
     }
     member.status = updates.status;
-
-    // If deactivated, also mark any active team leadership positions as inactive? Or keep record
   }
 
   member.updatedAt = new Date().toISOString();

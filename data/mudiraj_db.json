@@ -4,10 +4,10 @@
     "databaseEngine": "Local Persistent JSON Adapter (SQL-Ready Architecture)",
     "maxDesignedCapacity": 2000000,
     "createdAt": "2026-09-26T04:06:18.288Z",
-    "updatedAt": "2026-09-26T04:08:09.949Z"
+    "updatedAt": "2026-09-27T03:29:13.564Z"
   },
   "sequences": {
-    "membershipId": 8,
+    "membershipId": 9,
     "applicationNo": 12
   },
   "admins": [
@@ -20,7 +20,7 @@
       "passwordSalt": "69d8d8c59c1a330c6e897e10295a61cf",
       "role": "SUPER_ADMIN",
       "status": "Active",
-      "lastLoginAt": "2026-09-26T04:08:09.934Z",
+      "lastLoginAt": "2026-09-27T03:29:13.554Z",
       "createdAt": "2026-01-01T09:00:00.000Z"
     }
   ],
@@ -2684,7 +2684,7 @@
     {
       "id": "mem-111",
       "applicationNo": "APP-2026-0011",
-      "membershipId": null,
+      "membershipId": "MUD-00000009",
       "fullName": "Prabhakar Rao Mudiraj",
       "fatherName": "Subbarayudu",
       "motherName": "Narayanamma",
@@ -2709,13 +2709,13 @@
       "pincode": "524003",
       "idType": "Aadhaar Card",
       "idNumber": "334455667788",
-      "status": "Pending",
+      "status": "Active",
       "applicationDate": "2026-09-25T17:10:00.000Z",
-      "approvalDate": null,
-      "approvedBy": null,
+      "approvalDate": "2026-09-26T04:20:06.349Z",
+      "approvedBy": "admin",
       "remarks": "Submitted online application",
       "createdAt": "2026-09-25T17:10:00.000Z",
-      "updatedAt": "2026-09-25T17:10:00.000Z"
+      "updatedAt": "2026-09-26T04:20:06.349Z"
     },
     {
       "id": "mem-112",
@@ -2829,6 +2829,42 @@
     }
   ],
   "auditLogs": [
+    {
+      "id": "log-3582993c-4fb",
+      "action": "ADMIN_LOGIN",
+      "entityType": "Admin",
+      "entityId": "admin-1",
+      "actor": "admin",
+      "details": "Administrator \"State Chief Administrator\" (admin) signed in.",
+      "createdAt": "2026-09-27T03:29:13.564Z"
+    },
+    {
+      "id": "log-0fb7e14c-f4b",
+      "action": "ADMIN_LOGIN",
+      "entityType": "Admin",
+      "entityId": "admin-1",
+      "actor": "admin",
+      "details": "Administrator \"State Chief Administrator\" (admin) signed in.",
+      "createdAt": "2026-09-27T03:06:51.149Z"
+    },
+    {
+      "id": "log-039a23f9-9ba",
+      "action": "ADMIN_LOGOUT",
+      "entityType": "Admin",
+      "entityId": "admin-1",
+      "actor": "admin",
+      "details": "Administrator \"State Chief Administrator\" signed out.",
+      "createdAt": "2026-09-26T04:40:37.465Z"
+    },
+    {
+      "id": "log-98405bad-ac2",
+      "action": "APPLICATION_APPROVED",
+      "entityType": "Member",
+      "entityId": "mem-111",
+      "actor": "admin",
+      "details": "Approved Prabhakar Rao Mudiraj (APP-2026-0011). Assigned Membership ID: MUD-00000009. Status: Active.",
+      "createdAt": "2026-09-26T04:20:06.362Z"
+    },
     {
       "id": "log-47e092b7-550",
       "action": "ADMIN_LOGIN",

@@ -1,26 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import MemberTable from '@/components/MemberTable';
 import MemberForm from '@/components/MemberForm';
 import { UserPlus, X } from 'lucide-react';
 
 export default function AdminMembersPage() {
-  const [hierarchy, setHierarchy] = useState({
-    districts: [],
-    constitutions: [],
-    mandals: [],
-  });
   const [showAddModal, setShowAddModal] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
-
-  useEffect(() => {
-    fetch('/api/admin/organizations')
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.hierarchy) setHierarchy(d.hierarchy);
-      });
-  }, []);
 
   return (
     <div>
@@ -54,7 +41,6 @@ export default function AdminMembersPage() {
 
       <MemberTable
         key={refreshKey}
-        hierarchy={hierarchy}
         defaultStatus=""
         title="All Community Members & Applications"
         showApplicationActions={true}
@@ -81,7 +67,6 @@ export default function AdminMembersPage() {
             </div>
             <div className="modal-body">
               <MemberForm
-                hierarchy={hierarchy}
                 isAdminMode={true}
                 onSuccess={() => {
                   setShowAddModal(false);
