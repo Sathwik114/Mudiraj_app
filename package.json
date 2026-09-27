@@ -1,0 +1,17 @@
+{
+  "name": "mudiraj-community-management-system",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Mudiraj Community Membership & Organization Management System - Andhra Pradesh",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "lucide-react": "^0.468.0",
+    "next": "^15.1.6",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}
