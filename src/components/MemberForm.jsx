@@ -127,8 +127,8 @@ export default function MemberForm({
       newErrors.mobile = "Please enter a valid 10-digit Indian mobile number.";
     }
 
-    if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      newErrors.email = "Please enter a valid email address.";
+    if (!formData.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) {
+      newErrors.email = "Please enter a valid email address to receive your Membership ID and Password.";
     }
     
     if (!formData.photoUrl) {
@@ -238,13 +238,20 @@ export default function MemberForm({
               <span style={{ color: 'var(--text-muted)' }}>Applicant Full Name:</span>
               <div style={{ fontWeight: 600 }}>{submittedRecord.fullName}</div>
             </div>
+            {submittedRecord.email && (
+              <div>
+                <span style={{ color: 'var(--text-muted)' }}>Registered Email:</span>
+                <div style={{ fontWeight: 600 }}>{submittedRecord.email}</div>
+              </div>
+            )}
           </div>
         </div>
 
         <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '20px' }}>
           Please save your Application Number (<strong>{submittedRecord.applicationNo}</strong>). Once an
-          Administrator approves your application, your permanent unique Membership ID (Format:{' '}
-          <code>MUD-00000001</code>) will be generated.
+          Administrator approves your application, your permanent unique <strong>Membership ID</strong> (Format:{' '}
+          <code>MUD-00000001</code>) and a <strong>6-digit Password</strong> will be generated, saved in the database,
+          and sent to your email address (<strong>{submittedRecord.email || formData.email}</strong>).
         </p>
 
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
@@ -374,16 +381,17 @@ export default function MemberForm({
 
           <div className="form-group">
             <label className="form-label" htmlFor="email">
-              Email Address
+              Email Address (ఇమెయిల్) <span className="required-star">*</span>
             </label>
             <input
               id="email"
               name="email"
               type="email"
               className="form-control"
-              placeholder="name@example.com (Optional)"
+              placeholder="name@gmail.com (for ID & Password)"
               value={formData.email}
               onChange={handleChange}
+              required
             />
             {errors.email && <span className="form-error">{errors.email}</span>}
           </div>

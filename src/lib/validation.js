@@ -178,8 +178,8 @@ export function validateMembershipApplication(payload) {
     }
   }
 
-  if (!isValidEmail(payload.email)) {
-    errors.email = 'Please enter a valid email address.';
+  if (!payload.email || !String(payload.email).trim() || !isValidEmail(payload.email)) {
+    errors.email = 'Please enter a valid email address to receive your Membership ID and Password.';
   }
 
   // Address checks

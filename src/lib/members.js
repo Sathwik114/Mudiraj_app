@@ -226,6 +226,10 @@ export function lookupPublicMembershipStatus(query) {
   };
 }
 
+export function generateRandom6DigitPassword() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
 /**
  * Creates a new Membership Application (from Public Website or Admin Direct Registration).
  */
@@ -262,11 +266,13 @@ export function createMembershipApplication(payload, { autoApprove = false, acto
 
   let status = 'Pending';
   let membershipId = null;
+  let memberPassword = null;
   let approvalDate = null;
   let approvedBy = null;
 
   if (autoApprove) {
     membershipId = generateNextMembershipId(localDbAdapter);
+    memberPassword = generateRandom6DigitPassword();
     status = 'Active';
     approvalDate = now;
     approvedBy = actor;
@@ -276,6 +282,8 @@ export function createMembershipApplication(payload, { autoApprove = false, acto
     id: generateUuid('mem'),
     applicationNo,
     membershipId,
+    memberPassword,
+    password: memberPassword,
     fullName: payload.fullName ? String(payload.fullName).trim() : '',
     fatherName: payload.fatherName ? String(payload.fatherName).trim() : '',
     motherName: payload.motherName ? String(payload.motherName).trim() : '',
@@ -326,7 +334,7 @@ export function createMembershipApplication(payload, { autoApprove = false, acto
     entityId: newMember.id,
     actor,
     details: autoApprove
-      ? `Admin registered & approved ${newMember.fullName} with Membership ID ${newMember.membershipId}.`
+      ? `Admin registered & approved ${newMember.fullName} with Membership ID ${newMember.membershipId} and 6-digit password.`
       : `Public membership application ${newMember.applicationNo} submitted by ${newMember.fullName} (${newMember.districtName}).`,
   });
 
@@ -336,6 +344,7 @@ export function createMembershipApplication(payload, { autoApprove = false, acto
 /**
  * Approves a Pending (or Rejected) Membership Application:
  * - Generates a unique permanent Membership ID (MUD-00000001+) if not already assigned
+ * - Generates a random 6-digit password and saves both in the database
  * - Sets status to 'Active' (as specified in the workflow: "Generate Unique Membership ID -> Member Status = Active")
  */
 export function approveMembershipApplication({
@@ -352,6 +361,11 @@ export function approveMembershipApplication({
   if (!member.membershipId) {
     member.membershipId = generateNextMembershipId(localDbAdapter);
   }
+  if (!member.memberPassword) {
+    member.memberPassword = generateRandom6DigitPassword();
+  }
+  member.password = member.memberPassword;
+
   member.status = ['Active', 'Approved'].includes(targetStatus) ? targetStatus : 'Active';
   member.approvalDate = member.approvalDate || now;
   member.approvedBy = actor;
@@ -369,7 +383,7 @@ export function approveMembershipApplication({
     entityType: 'Member',
     entityId: member.id,
     actor,
-    details: `Approved ${member.fullName} (${member.applicationNo}). Assigned Membership ID: ${member.membershipId}. Status: ${member.status}.`,
+    details: `Approved ${member.fullName} (${member.applicationNo}). Assigned Membership ID: ${member.membershipId} and 6-digit password. Status: ${member.status}.`,
   });
 
   return enrichMemberWithLeadership(member, db);
@@ -462,14 +476,18 @@ export function updateMemberRecord({ memberId, updates, actor = 'admin' }) {
 
   // If transitioning to Approved or Active and no Membership ID exists yet, generate one!
   if (updates.status && updates.status !== member.status) {
-    if (['Approved', 'Active'].includes(updates.status) && !member.membershipId) {
-      member.membershipId = generateNextMembershipId(localDbAdapter);
-      member.approvalDate = new Date().toISOString();
-      member.approvedBy = actor;
+    if (['Approved', 'Active'].includes(updates.status)) {
+      if (!member.membershipId) {
+        member.membershipId = generateNextMembershipId(localDbAdapter);
+        member.approvalDate = new Date().toISOString();
+        member.approvedBy = actor;
+      }
+      if (!member.memberPassword) {
+        member.memberPassword = generateRandom6DigitPassword();
+      }
+      member.password = member.memberPassword;
     }
     member.status = updates.status;
-
-    // If deactivated, also mark any active team leadership positions as inactive? Or keep record
   }
 
   member.updatedAt = new Date().toISOString();

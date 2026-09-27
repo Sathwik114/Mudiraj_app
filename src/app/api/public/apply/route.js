@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { memberService } from '@/services/memberService';
+import { sendApplicationSubmittedEmail } from '@/lib/mailer';
 
 /**
  * Public Membership Application & Status Lookup API
@@ -44,14 +45,19 @@ export async function POST(request) {
       actor: 'public',
     });
 
+    const emailResult = await sendApplicationSubmittedEmail(created);
+
     return NextResponse.json(
       {
         success: true,
+        emailSent: emailResult.sent,
+        emailReason: emailResult.reason || null,
         message:
-          'Your Mudiraj Community Membership Application has been submitted successfully! Once reviewed and approved by the Administrator, your unique Membership ID will be issued.',
+          'Your Mudiraj Community Membership Application has been submitted successfully! Once reviewed and approved by the Administrator, your unique Membership ID and 6-digit Password will be emailed to you.',
         application: {
           applicationNo: created.applicationNo,
           fullName: created.fullName,
+          email: created.email,
           districtName: created.districtName,
           constitutionName: created.constitutionName,
           mandalName: created.mandalName,

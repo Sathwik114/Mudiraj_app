@@ -504,9 +504,16 @@ export default function MemberTable({
                 <tr key={member.id}>
                   <td>
                     {member.membershipId ? (
-                      <div style={{ fontWeight: 800, color: 'var(--primary)', fontSize: '14px' }}>
-                        {member.membershipId}
-                      </div>
+                      <>
+                        <div style={{ fontWeight: 800, color: 'var(--primary)', fontSize: '14px' }}>
+                          {member.membershipId}
+                        </div>
+                        {(member.memberPassword || member.password) && (
+                          <div style={{ fontSize: '11px', color: 'var(--accent-hover)', fontWeight: 700 }}>
+                            Pass: <code>{member.memberPassword || member.password}</code>
+                          </div>
+                        )}
+                      </>
                     ) : (
                       <div style={{ fontSize: '12px', color: 'var(--warning)', fontWeight: 700 }}>
                         ID Pending Approval
@@ -735,6 +742,11 @@ export default function MemberTable({
                   >
                     {selectedMember.membershipId || 'PENDING APPROVAL'}
                   </div>
+                  {(selectedMember.memberPassword || selectedMember.password) && (
+                    <div style={{ fontSize: '12px', color: '#fde68a', marginTop: '6px', fontWeight: 700 }}>
+                      6-Digit Password: <code>{selectedMember.memberPassword || selectedMember.password}</code>
+                    </div>
+                  )}
                 </div>
               </div>
 

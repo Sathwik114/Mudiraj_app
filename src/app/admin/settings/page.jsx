@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Lock, Database, Download, Activity, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Lock, Database, Download, Activity, CheckCircle2, AlertCircle, Mail } from 'lucide-react';
 
 export default function AdminSettingsPage() {
   const [auditLogs, setAuditLogs] = useState([]);
@@ -9,11 +9,21 @@ export default function AdminSettingsPage() {
   const [newPassword, setNewPassword] = useState('');
   const [pwdFeedback, setPwdFeedback] = useState({ type: '', text: '' });
 
+  // Gmail SMTP settings
+  const [smtpEmail, setSmtpEmail] = useState('pushpagirisathwik@gmail.com');
+  const [smtpAppPassword, setSmtpAppPassword] = useState('');
+  const [smtpConfigured, setSmtpConfigured] = useState(false);
+  const [smtpFeedback, setSmtpFeedback] = useState({ type: '', text: '' });
+
   useEffect(() => {
     fetch('/api/admin/stats')
       .then((r) => r.json())
       .then((d) => {
         if (d.recentAuditLogs) setAuditLogs(d.recentAuditLogs);
+        if (d.smtpConfig) {
+          setSmtpEmail(d.smtpConfig.smtpEmail || 'pushpagirisathwik@gmail.com');
+          setSmtpConfigured(Boolean(d.smtpConfig.isConfigured));
+        }
       });
   }, []);
 
@@ -35,6 +45,26 @@ export default function AdminSettingsPage() {
     setPwdFeedback({ type: 'success', text: data.message });
     setCurrentPassword('');
     setNewPassword('');
+  }
+
+  async function handleSmtpUpdate(e) {
+    e.preventDefault();
+    setSmtpFeedback({ type: '', text: '' });
+
+    const res = await fetch('/api/admin/stats', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ smtpEmail, smtpAppPassword }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setSmtpFeedback({ type: 'error', text: data.error || 'Failed to save Gmail SMTP settings.' });
+      return;
+    }
+
+    setSmtpConfigured(Boolean(data.smtpConfig?.isConfigured));
+    setSmtpAppPassword('');
+    setSmtpFeedback({ type: 'success', text: data.message });
   }
 
   async function handleDownloadBackup() {
@@ -62,7 +92,62 @@ export default function AdminSettingsPage() {
           System Settings, Security &amp; Database Architecture
         </h1>
         <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-          Manage administrator security, download database backups, view audit logs, and review external SQL database migration settings.
+          Manage administrator security, configure Gmail notifications, download database backups, and view audit logs.
+        </p>
+      </div>
+
+      {/* Gmail SMTP Configuration Card */}
+      <div className="card" style={{ marginBottom: '24px', borderTop: '4px solid var(--success)' }}>
+        <div className="card-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Mail size={18} color="var(--success)" />
+            <h2 className="card-title">Gmail SMTP Credentials (Automated ID &amp; 6-Digit Password Email)</h2>
+          </div>
+          <span className={`badge ${smtpConfigured ? 'badge-active' : 'badge-pending'}`}>
+            {smtpConfigured ? 'Gmail Connected' : 'App Password Required'}
+          </span>
+        </div>
+
+        {smtpFeedback.text && (
+          <div className={`alert ${smtpFeedback.type === 'error' ? 'alert-error' : 'alert-success'}`}>
+            {smtpFeedback.type === 'error' ? <AlertCircle size={18} /> : <CheckCircle2 size={18} />}
+            <span>{smtpFeedback.text}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleSmtpUpdate} className="form-grid" style={{ alignItems: 'end' }}>
+          <div className="form-group">
+            <label className="form-label">Sender Gmail Address</label>
+            <input
+              type="email"
+              className="form-control"
+              placeholder="yourname@gmail.com"
+              value={smtpEmail}
+              onChange={(e) => setSmtpEmail(e.target.value)}
+              required
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Gmail 16-Character App Password</label>
+            <input
+              type="password"
+              className="form-control"
+              placeholder={smtpConfigured ? '•••••••••••••••• (Saved — enter new to update)' : 'Enter 16-character Google App Password'}
+              value={smtpAppPassword}
+              onChange={(e) => setSmtpAppPassword(e.target.value)}
+              required={!smtpConfigured}
+            />
+          </div>
+
+          <div>
+            <button type="submit" className="btn btn-success" style={{ width: '100%' }}>
+              Save Gmail Credentials
+            </button>
+          </div>
+        </form>
+        <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '10px' }}>
+          Used to email the applicant upon submission and send their permanent <strong>Membership ID</strong> and random <strong>6-digit Password</strong> when approved by the Admin.
         </p>
       </div>
 

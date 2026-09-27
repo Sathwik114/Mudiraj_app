@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireAdminAuth } from '@/lib/auth';
 import { memberService } from '@/services/memberService';
+import { sendMembershipApprovedEmail } from '@/lib/mailer';
 
 export async function GET(request) {
   const { authorized } = await requireAdminAuth();
@@ -60,11 +61,20 @@ export async function POST(request) {
       autoApprove,
       actor: admin.username,
     });
+
+    let emailResult = { sent: false };
+    if (autoApprove && created.email) {
+      emailResult = await sendMembershipApprovedEmail(created);
+    }
+
     return NextResponse.json(
       {
         success: true,
+        emailSent: emailResult.sent,
         message: autoApprove
-          ? `Member registered and approved with Membership ID ${created.membershipId}.`
+          ? `Member registered and approved with Membership ID ${created.membershipId} and Password ${created.memberPassword}.${
+              emailResult.sent ? ` Credentials sent to ${created.email}.` : ''
+            }`
           : `Application ${created.applicationNo} created.`,
         member: created,
       },
@@ -102,9 +112,18 @@ export async function PATCH(request) {
         targetStatus: targetStatus || 'Active',
         actor: admin.username,
       });
+
+      const emailResult = await sendMembershipApprovedEmail(updated);
+      const emailNotice = emailResult.sent
+        ? ` Credentials emailed to ${updated.email}.`
+        : updated.email
+        ? ` (Email not sent: ${emailResult.reason})`
+        : ' (No email address on record)';
+
       return NextResponse.json({
         success: true,
-        message: `Application approved! Unique Membership ID generated: ${updated.membershipId}`,
+        emailSent: emailResult.sent,
+        message: `Application approved! Membership ID: ${updated.membershipId} | 6-Digit Password: ${updated.memberPassword}.${emailNotice}`,
         member: updated,
       });
     }

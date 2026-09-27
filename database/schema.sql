@@ -57,6 +57,7 @@ CREATE TABLE members (
     id VARCHAR(64) PRIMARY KEY,
     application_no VARCHAR(40) NOT NULL UNIQUE,
     membership_id VARCHAR(32) NULL UNIQUE,
+    member_password VARCHAR(20) NULL,
     full_name VARCHAR(150) NOT NULL,
     father_name VARCHAR(150) NOT NULL,
     mother_name VARCHAR(150) NOT NULL,
