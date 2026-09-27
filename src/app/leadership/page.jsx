@@ -11,10 +11,10 @@ function LeadershipDirectoryContent() {
   const searchParams = useSearchParams();
   const initialTeamType = searchParams.get('teamType') || '';
 
-  const [orgLevel, setOrgLevel] = useState('State');
+  const [orgLevelId, setOrgLevelId] = useState('');
   const [teamType, setTeamType] = useState(initialTeamType);
-  const [districtId, setDistrictId] = useState('');
-  const [hierarchy, setHierarchy] = useState({ districts: [] });
+  const [orgUnitId, setOrgUnitId] = useState('');
+  const [hierarchy, setHierarchy] = useState({ orgLevels: [], orgUnits: [] });
   const [teams, setTeams] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -23,14 +23,14 @@ function LeadershipDirectoryContent() {
       setLoading(true);
       try {
         const params = new URLSearchParams();
-        if (orgLevel) params.set('orgLevel', orgLevel);
+        if (orgLevelId) params.set('orgLevelId', orgLevelId);
         if (teamType) params.set('teamType', teamType);
-        if (districtId) params.set('districtId', districtId);
+        if (orgUnitId) params.set('orgUnitId', orgUnitId);
 
         const res = await fetch(`/api/public/organization?${params.toString()}`);
         const data = await res.json();
         if (res.ok) {
-          setHierarchy(data.hierarchy || { districts: [] });
+          setHierarchy(data.hierarchy || { orgLevels: [], orgUnits: [] });
           setTeams(data.teams || []);
         }
       } catch (err) {
@@ -40,7 +40,7 @@ function LeadershipDirectoryContent() {
       }
     }
     loadPublicLeadership();
-  }, [orgLevel, teamType, districtId]);
+  }, [orgLevelId, teamType, orgUnitId]);
 
   return (
     <div className="container">
@@ -64,16 +64,16 @@ function LeadershipDirectoryContent() {
             <label className="form-label">Organizational Level</label>
             <select
               className="form-control"
-              value={orgLevel}
+              value={orgLevelId}
               onChange={(e) => {
-                setOrgLevel(e.target.value);
-                if (e.target.value === 'State') setDistrictId('');
+                setOrgLevelId(e.target.value);
+                setOrgUnitId('');
               }}
             >
               <option value="">All Levels</option>
-              {VALID_ORG_LEVELS.map((lvl) => (
-                <option key={lvl} value={lvl}>
-                  {lvl} Level {lvl === 'Gramam' ? '(Future Feature)' : ''}
+              {(hierarchy.orgLevels || []).map((lvl) => (
+                <option key={lvl.id} value={lvl.id}>
+                  {lvl.name} Level
                 </option>
               ))}
             </select>
@@ -96,17 +96,19 @@ function LeadershipDirectoryContent() {
           </div>
 
           <div className="form-group">
-            <label className="form-label">Filter by District</label>
+            <label className="form-label">Filter by Unit</label>
             <select
               className="form-control"
-              value={districtId}
-              onChange={(e) => setDistrictId(e.target.value)}
-              disabled={orgLevel === 'State'}
+              value={orgUnitId}
+              onChange={(e) => setOrgUnitId(e.target.value)}
+              disabled={!orgLevelId}
             >
-              <option value="">All Districts</option>
-              {(hierarchy.districts || []).map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
+              <option value="">All Units</option>
+              {(hierarchy.orgUnits || [])
+                .filter(u => u.orgLevelId === orgLevelId)
+                .map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
                 </option>
               ))}
             </select>

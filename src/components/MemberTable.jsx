@@ -186,6 +186,24 @@ export default function MemberTable({
     }
   }
 
+  async function handleRevoke(member) {
+    if (!window.confirm(`Revoke rejection for ${member.fullName}? This will move the application back to Pending.`)) {
+      return;
+    }
+    const res = await fetch('/api/admin/members', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'REVOKE', memberId: member.id }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      setFeedback({ type: 'success', text: `Rejection revoked for ${member.fullName}.` });
+      fetchMembers(pagination.page);
+    } else {
+      setFeedback({ type: 'error', text: data.error || 'Revoke failed.' });
+    }
+  }
+
   async function handleSaveEdit(e) {
     e.preventDefault();
     if (!editingMember) return;
@@ -205,6 +223,22 @@ export default function MemberTable({
       fetchMembers(pagination.page);
     } else {
       setFeedback({ type: 'error', text: data.error || 'Update failed.' });
+    }
+  }
+
+  async function handleDelete(member) {
+    if (!window.confirm(`Are you sure you want to PERMANENTLY delete member ${member.fullName} (${member.membershipId || member.applicationNo})? This action cannot be undone.`)) {
+      return;
+    }
+    const res = await fetch(`/api/admin/members?id=${member.id}`, {
+      method: 'DELETE',
+    });
+    const data = await res.json();
+    if (res.ok) {
+      setFeedback({ type: 'success', text: data.message });
+      fetchMembers(pagination.page);
+    } else {
+      setFeedback({ type: 'error', text: data.error || 'Delete failed.' });
     }
   }
 
@@ -559,6 +593,17 @@ export default function MemberTable({
                         </button>
                       )}
 
+                      {member.status === 'Rejected' && showApplicationActions && (
+                        <button
+                          type="button"
+                          className="btn btn-warning btn-sm"
+                          title="Revoke Rejection"
+                          onClick={() => handleRevoke(member)}
+                        >
+                          <RefreshCw size={14} /> Revoke
+                        </button>
+                      )}
+
                       <button
                         type="button"
                         className="btn btn-outline btn-sm"
@@ -575,6 +620,15 @@ export default function MemberTable({
                         onClick={() => setEditingMember({ ...member })}
                       >
                         <Edit3 size={14} /> Edit
+                      </button>
+
+                      <button
+                        type="button"
+                        className="btn btn-danger btn-sm"
+                        title="Delete Member"
+                        onClick={() => handleDelete(member)}
+                      >
+                        <XCircle size={14} /> Delete
                       </button>
                     </div>
                   </td>
@@ -727,6 +781,14 @@ export default function MemberTable({
                   {selectedMember.approvalDate
                     ? new Date(selectedMember.approvalDate).toLocaleString()
                     : 'Not Yet Approved'}
+                </div>
+                <div>
+                  <strong>Sponsored By (Membership ID):</strong>{' '}
+                  {selectedMember.sponsorId ? (
+                    <span className="badge badge-info">{selectedMember.sponsorId}</span>
+                  ) : (
+                    '—'
+                  )}
                 </div>
                 <div style={{ gridColumn: 'span 2' }}>
                   <strong>Remarks:</strong> {selectedMember.remarks || '—'}

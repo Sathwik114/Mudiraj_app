@@ -1,6 +1,7 @@
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import MemberForm from '@/components/MemberForm';
+import PasswordGate from '@/components/PasswordGate';
 import { organizationService } from '@/services/organizationService';
 
 export const dynamic = 'force-dynamic';

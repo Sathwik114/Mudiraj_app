@@ -2,34 +2,27 @@
 
 import { useState, useEffect } from 'react';
 import { UserCheck, MapPin, CreditCard, Upload, CheckCircle2, AlertCircle } from 'lucide-react';
-import { VALID_GENDERS, VALID_ID_TYPES } from '@/lib/validation';
+import { VALID_GENDERS, VALID_ID_TYPES, VALID_BLOOD_GROUPS } from '@/lib/validation';
 
 export default function MemberForm({
   hierarchy,
   isAdminMode = false,
   onSuccess = null,
 }) {
-  const districts = hierarchy?.districts || [];
-  const allConstitutions = hierarchy?.constitutions || [];
-  const allMandals = hierarchy?.mandals || [];
-
   const [formData, setFormData] = useState({
     fullName: '',
     fatherName: '',
     motherName: '',
     dob: '',
     gender: 'Male',
+    bloodGroup: 'Unknown',
     mobile: '',
     alternateMobile: '',
     email: '',
     photoUrl: '',
     houseNo: '',
     street: '',
-    gramamName: '',
-    districtId: districts[0]?.id || '',
-    constitutionId: '',
-    mandalId: '',
-    stateName: 'Andhra Pradesh',
+    orgUnitId: '',
     pincode: '',
     idType: 'Aadhaar Card',
     idNumber: '',
@@ -37,44 +30,56 @@ export default function MemberForm({
     autoApprove: isAdminMode,
   });
 
+  const [selectedParents, setSelectedParents] = useState({});
   const [errors, setErrors] = useState({});
   const [serverError, setServerError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submittedRecord, setSubmittedRecord] = useState(null);
-
-  // Filter Constitutions by selected District
-  const availableConstitutions = allConstitutions.filter(
-    (c) => c.districtId === formData.districtId
-  );
-
-  // Filter Mandals by selected Constitution
-  const availableMandals = allMandals.filter(
-    (m) => m.constitutionId === formData.constitutionId
-  );
+  const [fetchingPincode, setFetchingPincode] = useState(false);
 
   useEffect(() => {
-    if (formData.districtId) {
-      const matchingConst = allConstitutions.filter((c) => c.districtId === formData.districtId);
-      const firstConstId = matchingConst[0]?.id || '';
-      setFormData((prev) => ({
-        ...prev,
-        constitutionId: firstConstId,
-      }));
+    async function fetchPincodeDetails() {
+      if (formData.pincode && formData.pincode.length === 6) {
+        setFetchingPincode(true);
+        try {
+          const res = await fetch(`https://api.postalpincode.in/pincode/${formData.pincode}`);
+          const data = await res.json();
+          if (data && data[0] && data[0].Status === 'Success') {
+            const postOffices = data[0].PostOffice;
+            if (postOffices && postOffices.length > 0) {
+              const po = postOffices[0];
+              // Suggest a detailed address format based on the postal code
+              const suggestedAddress = `${po.Name}, ${po.Block}, ${po.District}, ${po.State}`;
+              setFormData(prev => ({
+                ...prev,
+                // Only overwrite if street is currently empty to avoid wiping out user edits
+                street: prev.street ? prev.street : suggestedAddress
+              }));
+            }
+          }
+        } catch (err) {
+          console.error("Failed to fetch pincode details", err);
+        } finally {
+          setFetchingPincode(false);
+        }
+      }
     }
-  }, [formData.districtId]);
+    fetchPincodeDetails();
+  }, [formData.pincode]);
 
-  useEffect(() => {
-    if (formData.constitutionId) {
-      const matchingMandals = allMandals.filter(
-        (m) => m.constitutionId === formData.constitutionId
-      );
-      const firstMandalId = matchingMandals[0]?.id || '';
-      setFormData((prev) => ({
-        ...prev,
-        mandalId: firstMandalId,
-      }));
-    }
-  }, [formData.constitutionId]);
+  const handleParentSelect = (levelRank, unitId) => {
+    const newParents = { ...selectedParents, [levelRank]: unitId };
+    Object.keys(newParents).forEach(key => {
+      if (parseInt(key) > levelRank) {
+        delete newParents[key];
+      }
+    });
+    setSelectedParents(newParents);
+    
+    // Set the orgUnitId to the most granular selected unit
+    const highestRank = Math.max(...Object.keys(newParents).map(k => parseInt(k)));
+    setFormData(prev => ({ ...prev, orgUnitId: newParents[highestRank] }));
+  };
 
   function handleChange(e) {
     const { name, value, type, checked } = e.target;
@@ -106,18 +111,68 @@ export default function MemberForm({
     reader.readAsDataURL(file);
   }
 
+  function validateForm() {
+    const newErrors = {};
+    
+    if (!formData.fullName || formData.fullName.trim().length < 3) {
+      newErrors.fullName = "Full Name must be at least 3 characters long.";
+    }
+    
+    if (!formData.bloodGroup || formData.bloodGroup === 'Unknown') {
+      newErrors.bloodGroup = "Please select a valid Blood Group.";
+    }
+    
+    const mobileClean = formData.mobile.replace(/\s+/g, '');
+    if (!/^[6-9]\d{9}$/.test(mobileClean)) {
+      newErrors.mobile = "Please enter a valid 10-digit Indian mobile number.";
+    }
+
+    if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      newErrors.email = "Please enter a valid email address.";
+    }
+    
+    if (!formData.photoUrl) {
+      newErrors.photoUrl = "Passport photo is mandatory.";
+    }
+    
+    const idClean = formData.idNumber.replace(/\s+/g, '');
+    if (!/^[2-9]{1}[0-9]{11}$/.test(idClean)) {
+      newErrors.idNumber = "Aadhaar Number must be 12 digits and cannot start with 0 or 1.";
+    }
+    
+    if (!formData.pincode || !/^\d{6}$/.test(formData.pincode)) {
+      newErrors.pincode = "Please enter a valid 6-digit Pincode.";
+    }
+    
+    if (!formData.street || formData.street.trim().length < 2) {
+      newErrors.street = "Street / Colony name is required.";
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setServerError('');
     setErrors({});
-    setSubmitting(true);
+    if (!validateForm()) {
+       setServerError('Please fix the errors in the form before submitting.');
+       return;
+    }
 
+    // Everyone submits directly now. (Public users will get 'Pending' status on backend)
+    await processSubmission(formData);
+  }
+
+  async function processSubmission(payload) {
+    setSubmitting(true);
     try {
       const endpoint = isAdminMode ? '/api/admin/members' : '/api/public/apply';
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
 
@@ -183,19 +238,13 @@ export default function MemberForm({
               <span style={{ color: 'var(--text-muted)' }}>Applicant Full Name:</span>
               <div style={{ fontWeight: 600 }}>{submittedRecord.fullName}</div>
             </div>
-            <div>
-              <span style={{ color: 'var(--text-muted)' }}>Location Hierarchy:</span>
-              <div style={{ fontWeight: 600 }}>
-                {submittedRecord.gramamName}, {submittedRecord.mandalName}, {submittedRecord.constitutionName}, {submittedRecord.districtName}
-              </div>
-            </div>
           </div>
         </div>
 
         <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '20px' }}>
           Please save your Application Number (<strong>{submittedRecord.applicationNo}</strong>). Once an
           Administrator approves your application, your permanent unique Membership ID (Format:{' '}
-          <code>MUD-00000001</code>) will be generated and your status will become <strong>Active</strong>.
+          <code>MUD-00000001</code>) will be generated.
         </p>
 
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
@@ -216,7 +265,6 @@ export default function MemberForm({
                 photoUrl: '',
                 houseNo: '',
                 street: '',
-                gramamName: '',
                 pincode: '',
                 idNumber: '',
                 remarks: '',
@@ -225,9 +273,6 @@ export default function MemberForm({
           >
             Submit Another Application
           </button>
-          <a href={`/membership?query=${encodeURIComponent(submittedRecord.applicationNo)}`} className="btn btn-outline">
-            Track Application Status
-          </a>
         </div>
       </div>
     );
@@ -242,11 +287,11 @@ export default function MemberForm({
         </div>
       )}
 
-      {/* 1. PERSONAL DETAILS */}
+      {/* 1. MEMBER DETAILS */}
       <div className="form-section">
         <div className="form-section-title">
           <UserCheck size={18} />
-          <span>1. Personal Details</span>
+          <span>1. Basic Details</span>
         </div>
 
         <div className="form-grid">
@@ -265,56 +310,6 @@ export default function MemberForm({
               required
             />
             {errors.fullName && <span className="form-error">{errors.fullName}</span>}
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="fatherName">
-              Father Name (తండ్రి పేరు) <span className="required-star">*</span>
-            </label>
-            <input
-              id="fatherName"
-              name="fatherName"
-              type="text"
-              className="form-control"
-              placeholder="Enter father's full name"
-              value={formData.fatherName}
-              onChange={handleChange}
-              required
-            />
-            {errors.fatherName && <span className="form-error">{errors.fatherName}</span>}
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="motherName">
-              Mother Name (తల్లి పేరు) <span className="required-star">*</span>
-            </label>
-            <input
-              id="motherName"
-              name="motherName"
-              type="text"
-              className="form-control"
-              placeholder="Enter mother's full name"
-              value={formData.motherName}
-              onChange={handleChange}
-              required
-            />
-            {errors.motherName && <span className="form-error">{errors.motherName}</span>}
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="dob">
-              Date of Birth (పుట్టిన తేదీ) <span className="required-star">*</span>
-            </label>
-            <input
-              id="dob"
-              name="dob"
-              type="date"
-              className="form-control"
-              value={formData.dob}
-              onChange={handleChange}
-              required
-            />
-            {errors.dob && <span className="form-error">{errors.dob}</span>}
           </div>
 
           <div className="form-group">
@@ -338,6 +333,28 @@ export default function MemberForm({
           </div>
 
           <div className="form-group">
+            <label className="form-label" htmlFor="bloodGroup">
+              Blood Group (రక్త వర్గం) <span className="required-star">*</span>
+            </label>
+            <select
+              id="bloodGroup"
+              name="bloodGroup"
+              className="form-control"
+              value={formData.bloodGroup}
+              onChange={handleChange}
+              required
+            >
+              <option value="">-- Select Blood Group --</option>
+              {VALID_BLOOD_GROUPS.map((b) => (
+                <option key={b} value={b}>
+                  {b}
+                </option>
+              ))}
+            </select>
+            {errors.bloodGroup && <span className="form-error">{errors.bloodGroup}</span>}
+          </div>
+
+          <div className="form-group">
             <label className="form-label" htmlFor="mobile">
               Mobile Number (మొబైల్ నంబర్) <span className="required-star">*</span>
             </label>
@@ -353,23 +370,6 @@ export default function MemberForm({
               required
             />
             {errors.mobile && <span className="form-error">{errors.mobile}</span>}
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="alternateMobile">
-              Alternate Mobile Number
-            </label>
-            <input
-              id="alternateMobile"
-              name="alternateMobile"
-              type="tel"
-              maxLength={10}
-              className="form-control"
-              placeholder="Optional secondary number"
-              value={formData.alternateMobile}
-              onChange={handleChange}
-            />
-            {errors.alternateMobile && <span className="form-error">{errors.alternateMobile}</span>}
           </div>
 
           <div className="form-group">
@@ -390,7 +390,7 @@ export default function MemberForm({
 
           <div className="form-group">
             <label className="form-label" htmlFor="photoUpload">
-              Member Passport Photo
+              Member Passport Photo <span className="required-star">*</span>
             </label>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <label
@@ -423,130 +423,54 @@ export default function MemberForm({
             </div>
             {errors.photoUrl && <span className="form-error">{errors.photoUrl}</span>}
           </div>
+          <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+            <label className="form-label" htmlFor="idNumber">
+              Aadhaar Number <span className="required-star">*</span>
+            </label>
+            <div style={{ position: 'relative' }}>
+              <CreditCard size={18} style={{ position: 'absolute', left: '12px', top: '14px', color: '#64748b' }} />
+              <input
+                id="idNumber"
+                name="idNumber"
+                type="text"
+                className="form-control"
+                placeholder="12-digit Aadhaar Number"
+                value={formData.idNumber}
+                onChange={handleChange}
+                style={{ paddingLeft: '40px' }}
+                required
+              />
+            </div>
+            {errors.idNumber && <span className="form-error">{errors.idNumber}</span>}
+          </div>
         </div>
       </div>
 
-      {/* 2. ADDRESS & ORGANIZATIONAL HIERARCHY DETAILS */}
+      {/* 2. ADDRESS DETAILS */}
       <div className="form-section">
         <div className="form-section-title">
           <MapPin size={18} />
-          <span>2. Address &amp; Organizational Jurisdiction</span>
+          <span>2. Address & Location</span>
         </div>
 
         <div className="form-grid">
           <div className="form-group">
-            <label className="form-label" htmlFor="stateName">
-              State (రాష్ట్రం) <span className="required-star">*</span>
+            <label className="form-label" htmlFor="pincode">
+              Pincode (పిన్‌కోడ్) <span className="required-star">*</span>
             </label>
             <input
-              id="stateName"
-              name="stateName"
+              id="pincode"
+              name="pincode"
               type="text"
+              maxLength={6}
               className="form-control"
-              value="Andhra Pradesh"
-              readOnly
-            />
-            <span className="form-hint">Currently active for Andhra Pradesh State</span>
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="districtId">
-              District (జిల్లా) <span className="required-star">*</span>
-            </label>
-            <select
-              id="districtId"
-              name="districtId"
-              className="form-control"
-              value={formData.districtId}
-              onChange={handleChange}
-              required
-            >
-              <option value="">-- Select District --</option>
-              {districts.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name} ({d.code})
-                </option>
-              ))}
-            </select>
-            {errors.districtId && <span className="form-error">{errors.districtId}</span>}
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="constitutionId">
-              Constitution (నియోజకవర్గం) <span className="required-star">*</span>
-            </label>
-            <select
-              id="constitutionId"
-              name="constitutionId"
-              className="form-control"
-              value={formData.constitutionId}
-              onChange={handleChange}
-              required
-            >
-              <option value="">-- Select Constitution --</option>
-              {availableConstitutions.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} ({c.code})
-                </option>
-              ))}
-            </select>
-            {errors.constitutionId && <span className="form-error">{errors.constitutionId}</span>}
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="mandalId">
-              Mandal (మండలం) <span className="required-star">*</span>
-            </label>
-            <select
-              id="mandalId"
-              name="mandalId"
-              className="form-control"
-              value={formData.mandalId}
-              onChange={handleChange}
-              required
-            >
-              <option value="">-- Select Mandal --</option>
-              {availableMandals.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
-            {errors.mandalId && <span className="form-error">{errors.mandalId}</span>}
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="gramamName">
-              Village / Gramam (గ్రామం / వార్డు) <span className="required-star">*</span>
-            </label>
-            <input
-              id="gramamName"
-              name="gramamName"
-              type="text"
-              className="form-control"
-              placeholder="Enter Village / Gramam name"
-              value={formData.gramamName}
+              placeholder="6-digit Pincode"
+              value={formData.pincode}
               onChange={handleChange}
               required
             />
-            {errors.gramamName && <span className="form-error">{errors.gramamName}</span>}
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="houseNo">
-              House / Door Number (ఇంటి నంబర్) <span className="required-star">*</span>
-            </label>
-            <input
-              id="houseNo"
-              name="houseNo"
-              type="text"
-              className="form-control"
-              placeholder="e.g. 12-4-88/A"
-              value={formData.houseNo}
-              onChange={handleChange}
-              required
-            />
-            {errors.houseNo && <span className="form-error">{errors.houseNo}</span>}
+            {fetchingPincode && <span className="form-hint" style={{ color: 'var(--primary)' }}>Fetching address details...</span>}
+            {errors.pincode && <span className="form-error">{errors.pincode}</span>}
           </div>
 
           <div className="form-group" style={{ gridColumn: 'span 2' }}>
@@ -565,92 +489,7 @@ export default function MemberForm({
             />
             {errors.street && <span className="form-error">{errors.street}</span>}
           </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="pincode">
-              Pincode (పిన్‌కోడ్) <span className="required-star">*</span>
-            </label>
-            <input
-              id="pincode"
-              name="pincode"
-              type="text"
-              maxLength={6}
-              className="form-control"
-              placeholder="6-digit Pincode"
-              value={formData.pincode}
-              onChange={handleChange}
-              required
-            />
-            {errors.pincode && <span className="form-error">{errors.pincode}</span>}
-          </div>
-        </div>
-      </div>
-
-      {/* 3. GOVERNMENT ID DETAILS */}
-      <div className="form-section">
-        <div className="form-section-title">
-          <CreditCard size={18} />
-          <span>3. Identity Verification Details</span>
-        </div>
-
-        <div className="form-grid">
-          <div className="form-group">
-            <label className="form-label" htmlFor="idType">
-              ID Proof Type <span className="required-star">*</span>
-            </label>
-            <select
-              id="idType"
-              name="idType"
-              className="form-control"
-              value={formData.idType}
-              onChange={handleChange}
-            >
-              {VALID_ID_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="idNumber">
-              ID Number <span className="required-star">*</span>
-            </label>
-            <input
-              id="idNumber"
-              name="idNumber"
-              type="text"
-              className="form-control"
-              placeholder={
-                formData.idType === 'Aadhaar Card'
-                  ? '12-digit Aadhaar Number'
-                  : 'Enter Government ID Number'
-              }
-              value={formData.idNumber}
-              onChange={handleChange}
-              required
-            />
-            <span className="form-hint">
-              Kept strictly confidential; never displayed publicly.
-            </span>
-            {errors.idNumber && <span className="form-error">{errors.idNumber}</span>}
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="remarks">
-              Additional Remarks / Notes
-            </label>
-            <input
-              id="remarks"
-              name="remarks"
-              type="text"
-              className="form-control"
-              placeholder="Optional notes or volunteer interest"
-              value={formData.remarks}
-              onChange={handleChange}
-            />
-          </div>
+          
         </div>
       </div>
 
@@ -681,13 +520,12 @@ export default function MemberForm({
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
         <button type="submit" className="btn btn-primary btn-lg" disabled={submitting}>
-          {submitting
-            ? 'Submitting Application...'
-            : isAdminMode
-            ? 'Register Member'
-            : 'Submit Membership Application'}
+          {isAdminMode
+            ? (submitting ? 'Registering...' : 'Register Member')
+            : 'Review & Submit Application'}
         </button>
       </div>
+
     </form>
   );
 }

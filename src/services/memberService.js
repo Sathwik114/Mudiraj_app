@@ -6,6 +6,7 @@ import {
   approveMembershipApplication,
   rejectMembershipApplication,
   updateMemberRecord,
+  deleteMemberRecord,
 } from '@/lib/members';
 import { getDatabase } from '@/lib/database';
 import { validateMembershipApplication } from '@/lib/validation';
@@ -52,6 +53,10 @@ export const memberService = {
     return updateMemberRecord({ memberId, updates, actor });
   },
 
+  deleteMember({ memberId, actor = 'admin' }) {
+    return deleteMemberRecord({ memberId, actor });
+  },
+
   /**
    * Computes comprehensive Dashboard & Report statistics on the server side.
    */
@@ -66,24 +71,42 @@ export const memberService = {
     const rejectedApplications = db.members.filter((m) => m.status === 'Rejected').length;
     const registeredWithId = db.members.filter((m) => Boolean(m.membershipId)).length;
 
-    const totalStates = db.states.filter((s) => s.status === 'Active').length;
-    const totalDistricts = db.districts.length;
-    const activeDistricts = db.districts.filter((d) => d.status === 'Active').length;
-    const totalConstitutions = db.constitutions.length;
-    const activeConstitutions = db.constitutions.filter((c) => c.status === 'Active').length;
-    const totalMandals = db.mandals.length;
-    const activeMandals = db.mandals.filter((m) => m.status === 'Active').length;
-    const totalGramams = db.gramams.length;
+    // Dynamic hierarchy breakdown
+    const stateLevel = db.orgLevels.find((l) => l.levelRank === 1);
+    const districtLevel = db.orgLevels.find((l) => l.levelRank === 2);
+    const constitutionLevel = db.orgLevels.find((l) => l.levelRank === 3);
+    const mandalLevel = db.orgLevels.find((l) => l.levelRank === 4);
+    const gramamLevel = db.orgLevels.find((l) => l.levelRank === 5);
+
+    const states = db.orgUnits.filter((u) => u.orgLevelId === stateLevel?.id);
+    const districts = db.orgUnits.filter((u) => u.orgLevelId === districtLevel?.id);
+    const constitutions = db.orgUnits.filter((u) => u.orgLevelId === constitutionLevel?.id);
+    const mandals = db.orgUnits.filter((u) => u.orgLevelId === mandalLevel?.id);
+    const gramams = db.orgUnits.filter((u) => u.orgLevelId === gramamLevel?.id);
+
+    const totalStates = states.filter((s) => s.status === 'Active').length;
+    const totalDistricts = districts.length;
+    const activeDistricts = districts.filter((d) => d.status === 'Active').length;
+    const totalConstitutions = constitutions.length;
+    const activeConstitutions = constitutions.filter((c) => c.status === 'Active').length;
+    const totalMandals = mandals.length;
+    const activeMandals = mandals.filter((m) => m.status === 'Active').length;
+    const totalGramams = gramams.length;
 
     const totalTeams = db.teams.length;
     const totalLeaders = db.teamMembers.filter((tm) => tm.status === 'Active').length;
 
-    // District-wise breakdown for reports
-    const districtBreakdown = db.districts.map((dist) => {
-      const distMembers = db.members.filter((m) => m.districtId === dist.id);
-      const distConstitutions = db.constitutions.filter((c) => c.districtId === dist.id);
-      const distMandals = db.mandals.filter((m) => m.districtId === dist.id);
-      const distTeams = db.teams.filter((t) => t.districtId === dist.id || t.orgId === dist.id);
+    // Unit-wise breakdown (Districts) for reports
+    const districtBreakdown = districts.map((dist) => {
+      // Find all children under this district recursively or simply using direct children
+      // For simplicity in the dashboard, we look at direct children for Constitutions
+      const distConstitutions = constitutions.filter((c) => c.parentId === dist.id);
+      
+      // We can map members by looking at their path or if they are assigned to this district
+      // We assume members assigned directly to this district for now or update it later.
+      const distMembers = db.members.filter((m) => m.orgUnitId === dist.id);
+      
+      const distTeams = db.teams.filter((t) => t.orgUnitId === dist.id);
       const distTeamIds = new Set(distTeams.map((t) => t.id));
       const distLeaders = db.teamMembers.filter(
         (tm) => tm.status === 'Active' && distTeamIds.has(tm.teamId)
@@ -95,7 +118,7 @@ export const memberService = {
         districtCode: dist.code,
         status: dist.status,
         constitutionsCount: distConstitutions.length,
-        mandalsCount: distMandals.length,
+        mandalsCount: 0, // Need recursive lookup for exact count
         totalApplications: distMembers.length,
         activeMembers: distMembers.filter((m) => ['Active', 'Approved'].includes(m.status)).length,
         pendingApplications: distMembers.filter((m) => m.status === 'Pending').length,

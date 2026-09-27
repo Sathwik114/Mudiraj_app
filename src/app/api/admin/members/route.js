@@ -122,6 +122,19 @@ export async function PATCH(request) {
       });
     }
 
+    if (action === 'REVOKE') {
+      const updated = memberService.updateMember({
+        memberId,
+        updates: { status: 'Pending', remarks: 'Rejection revoked by admin. Pending review.' },
+        actor: admin.username,
+      });
+      return NextResponse.json({
+        success: true,
+        message: `Application status revoked to Pending.`,
+        member: updated,
+      });
+    }
+
     const updated = memberService.updateMember({
       memberId,
       updates: updates || body,
@@ -136,6 +149,37 @@ export async function PATCH(request) {
   } catch (err) {
     return NextResponse.json(
       { error: err.message || 'Failed to update member.' },
+      { status: 400 }
+    );
+  }
+}
+
+export async function DELETE(request) {
+  const { authorized, admin } = await requireAdminAuth();
+  if (!authorized) {
+    return NextResponse.json({ error: 'Unauthorized administrator access.' }, { status: 401 });
+  }
+
+  try {
+    const { searchParams } = new URL(request.url);
+    const memberId = searchParams.get('id');
+
+    if (!memberId) {
+      return NextResponse.json({ error: 'Member ID is required.' }, { status: 400 });
+    }
+
+    memberService.deleteMember({
+      memberId,
+      actor: admin.username,
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: 'Member deleted successfully.',
+    });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err.message || 'Failed to delete member.' },
       { status: 400 }
     );
   }

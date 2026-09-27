@@ -27,7 +27,7 @@ export async function POST(request) {
     return NextResponse.json(
       {
         success: true,
-        message: `${body.level} "${unit.name}" created and 3 leadership teams (Main, Youth, Mahila) initialized.`,
+        message: `Organization Unit "${unit.name}" created and 3 leadership teams initialized.`,
         unit,
       },
       { status: 201 }
@@ -51,7 +51,7 @@ export async function PATCH(request) {
     });
     return NextResponse.json({
       success: true,
-      message: `${body.level} "${unit.name}" updated successfully.`,
+      message: `Organization Unit "${unit.name}" updated successfully.`,
       unit,
     });
   } catch (err) {

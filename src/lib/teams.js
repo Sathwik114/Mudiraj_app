@@ -5,15 +5,13 @@ import {
   buildDefaultTeamsForOrg,
   recordAuditLog,
 } from './database.js';
+import { getHierarchyPath } from './organizations.js';
 import { DEFAULT_TEAM_POSITIONS } from './validation.js';
 
 /**
  * Reusable Team & Leadership Repository Layer (`lib/teams.js`)
  * ------------------------------------------------------------
- * Implements a single unified Team model across:
- * - Organizational Levels: State, District, Constitution, Mandal, Gramam
- * - Team Categories: Main Team, Youth Team, Mahila Team
- * - Default Leadership Positions (~30 positions, with dynamic Executive Member capacity)
+ * Implements a single unified Team model across the dynamic org hierarchy.
  */
 
 export function getPositionDefinitionsForTeam(team) {
@@ -30,14 +28,8 @@ export function getPositionDefinitionsForTeam(team) {
  * Enriches a team record with full hierarchy names and assigned leadership roster.
  */
 export function enrichTeamDetails(team, db = getDatabase()) {
-  const state = db.states.find((s) => s.id === team.stateId);
-  const district = team.districtId ? db.districts.find((d) => d.id === team.districtId) : null;
-  const constitution = team.constitutionId
-    ? db.constitutions.find((c) => c.id === team.constitutionId)
-    : null;
-  const mandal = team.mandalId ? db.mandals.find((m) => m.id === team.mandalId) : null;
-  const gramam = team.gramamId ? db.gramams.find((g) => g.id === team.gramamId) : null;
-
+  const path = getHierarchyPath(team.orgUnitId);
+  
   const positionDefs = getPositionDefinitionsForTeam(team);
   const totalCapacity = positionDefs.reduce((acc, p) => acc + p.maxCount, 0);
 
@@ -53,28 +45,17 @@ export function enrichTeamDetails(team, db = getDatabase()) {
         memberMobile: member ? member.mobile : '',
         memberStatus: member ? member.status : 'Unknown',
         memberPhotoUrl: member ? member.photoUrl : '',
-        memberDistrictName: member ? member.districtName : '',
-        memberMandalName: member ? member.mandalName : '',
+        memberLocationPath: member ? member.locationPath : '',
       };
     })
     .sort((a, b) => a.sortOrder - b.sortOrder || a.slotNumber - b.slotNumber);
 
-  const locationParts = [
-    gramam?.name,
-    mandal?.name,
-    constitution?.name,
-    district?.name,
-    state?.name || 'Andhra Pradesh',
-  ].filter(Boolean);
+  const locationLabel = path.map(p => p.name).join(' › ');
 
   return {
     ...team,
-    stateName: state?.name || 'Andhra Pradesh',
-    districtName: district?.name || null,
-    constitutionName: constitution?.name || null,
-    mandalName: mandal?.name || null,
-    gramamName: gramam?.name || null,
-    locationLabel: locationParts.join(' › '),
+    locationLabel,
+    hierarchyPath: path,
     positionDefinitions: positionDefs,
     totalPositionsCapacity: totalCapacity,
     filledPositionsCount: assignments.length,
@@ -86,42 +67,35 @@ export function enrichTeamDetails(team, db = getDatabase()) {
  * Queries teams across any organizational level and category.
  */
 export function queryTeams({
-  orgLevel = '',
-  orgId = '',
+  orgUnitId = '',
   teamType = '',
-  districtId = '',
-  constitutionId = '',
-  mandalId = '',
   search = '',
 } = {}) {
   const db = getDatabase();
   let filtered = db.teams;
 
-  if (orgLevel) {
-    filtered = filtered.filter((t) => t.orgLevel === orgLevel);
+  if (orgUnitId) {
+    // Return this unit and all children teams? For now, exact match or children.
+    // If a parent unit is passed, we might want to filter by path.
+    const unit = db.orgUnits.find(u => u.id === orgUnitId);
+    if (unit) {
+       // Find all orgUnits that have this unit in their path
+       const matchingUnits = db.orgUnits.filter(u => getHierarchyPath(u.id).some(p => p.id === orgUnitId));
+       const validUnitIds = new Set(matchingUnits.map(u => u.id));
+       filtered = filtered.filter(t => validUnitIds.has(t.orgUnitId));
+    }
   }
-  if (orgId) {
-    filtered = filtered.filter((t) => t.orgId === orgId);
-  }
+  
   if (teamType) {
     filtered = filtered.filter((t) => t.teamType === teamType);
   }
-  if (districtId) {
-    filtered = filtered.filter((t) => t.districtId === districtId);
-  }
-  if (constitutionId) {
-    filtered = filtered.filter((t) => t.constitutionId === constitutionId);
-  }
-  if (mandalId) {
-    filtered = filtered.filter((t) => t.mandalId === mandalId);
-  }
+  
   if (search && search.trim()) {
     const q = search.trim().toLowerCase();
     filtered = filtered.filter(
       (t) =>
         t.orgName.toLowerCase().includes(q) ||
-        t.teamType.toLowerCase().includes(q) ||
-        t.orgLevel.toLowerCase().includes(q)
+        t.teamType.toLowerCase().includes(q)
     );
   }
 
@@ -129,38 +103,26 @@ export function queryTeams({
 }
 
 /**
- * Ensures all 3 teams (Main, Youth, Mahila) exist for a given organization unit.
+ * Ensures all 3 teams (Main, Youth, Ladies) exist for a given organization unit.
  */
-export function ensureTeamsForOrganization({ orgLevel, orgId }) {
+export function ensureTeamsForOrganization({ orgUnitId }) {
   const db = getDatabase();
-  const existing = db.teams.filter((t) => t.orgLevel === orgLevel && t.orgId === orgId);
+  const unit = db.orgUnits.find(u => u.id === orgUnitId);
+  if (!unit) throw new Error(`Organization unit not found (${orgUnitId})`);
+
+  const existing = db.teams.filter((t) => t.orgUnitId === orgUnitId);
   if (existing.length === 3) {
     return existing.map((t) => enrichTeamDetails(t, db));
   }
 
-  let unit = null;
-  if (orgLevel === 'State') unit = db.states.find((x) => x.id === orgId);
-  if (orgLevel === 'District') unit = db.districts.find((x) => x.id === orgId);
-  if (orgLevel === 'Constitution') unit = db.constitutions.find((x) => x.id === orgId);
-  if (orgLevel === 'Mandal') unit = db.mandals.find((x) => x.id === orgId);
-  if (orgLevel === 'Gramam') unit = db.gramams.find((x) => x.id === orgId);
-
-  if (!unit) throw new Error(`Organization unit not found for ${orgLevel} (${orgId})`);
-
   const defaults = buildDefaultTeamsForOrg({
-    orgLevel,
-    orgId: unit.id,
+    orgUnitId: unit.id,
     orgName: unit.name,
-    stateId: unit.stateId || 'state-ap',
-    districtId: unit.districtId || (orgLevel === 'District' ? unit.id : null),
-    constitutionId: unit.constitutionId || (orgLevel === 'Constitution' ? unit.id : null),
-    mandalId: unit.mandalId || (orgLevel === 'Mandal' ? unit.id : null),
-    gramamId: orgLevel === 'Gramam' ? unit.id : null,
   });
 
   defaults.forEach((defTeam) => {
     const already = db.teams.some(
-      (t) => t.orgLevel === orgLevel && t.orgId === orgId && t.teamType === defTeam.teamType
+      (t) => t.orgUnitId === orgUnitId && t.teamType === defTeam.teamType
     );
     if (!already) {
       db.teams.push(defTeam);
@@ -169,7 +131,7 @@ export function ensureTeamsForOrganization({ orgLevel, orgId }) {
 
   saveDatabase(db);
   return db.teams
-    .filter((t) => t.orgLevel === orgLevel && t.orgId === orgId)
+    .filter((t) => t.orgUnitId === orgUnitId)
     .map((t) => enrichTeamDetails(t, db));
 }
 
@@ -382,12 +344,9 @@ export function removeLeaderFromTeam({ teamMemberId, actor = 'admin' }) {
  */
 export function queryAllLeaders({
   search = '',
-  orgLevel = '',
+  orgUnitId = '',
   teamType = '',
   positionCode = '',
-  districtId = '',
-  constitutionId = '',
-  mandalId = '',
 } = {}) {
   const db = getDatabase();
 
@@ -398,20 +357,8 @@ export function queryAllLeaders({
       const member = db.members.find((m) => m.id === tm.memberId);
       if (!team || !member) return null;
 
-      const district = team.districtId ? db.districts.find((d) => d.id === team.districtId) : null;
-      const constitution = team.constitutionId
-        ? db.constitutions.find((c) => c.id === team.constitutionId)
-        : null;
-      const mandal = team.mandalId ? db.mandals.find((m) => m.id === team.mandalId) : null;
-      const gramam = team.gramamId ? db.gramams.find((g) => g.id === team.gramamId) : null;
-
-      const locationParts = [
-        gramam?.name,
-        mandal?.name,
-        constitution?.name,
-        district?.name,
-        'Andhra Pradesh',
-      ].filter(Boolean);
+      const path = getHierarchyPath(team.orgUnitId);
+      const locationLabel = path.map(p => p.name).join(' › ');
 
       return {
         id: tm.id,
@@ -426,25 +373,23 @@ export function queryAllLeaders({
         positionTitle: tm.positionTitle,
         slotNumber: tm.slotNumber,
         teamType: team.teamType,
-        orgLevel: team.orgLevel,
-        orgId: team.orgId,
+        orgUnitId: team.orgUnitId,
         orgName: team.orgName,
-        districtId: team.districtId,
-        constitutionId: team.constitutionId,
-        mandalId: team.mandalId,
-        location: locationParts.join(' › '),
+        location: locationLabel,
         assignedAt: tm.assignedAt,
+        hierarchyPath: path,
       };
     })
     .filter(Boolean);
 
   return results.filter((item) => {
-    if (orgLevel && item.orgLevel !== orgLevel) return false;
     if (teamType && item.teamType !== teamType) return false;
     if (positionCode && item.positionCode !== positionCode) return false;
-    if (districtId && item.districtId !== districtId) return false;
-    if (constitutionId && item.constitutionId !== constitutionId) return false;
-    if (mandalId && item.mandalId !== mandalId) return false;
+    if (orgUnitId) {
+       // Check if this leader's team is under the requested orgUnitId
+       if (!item.hierarchyPath.some(p => p.id === orgUnitId)) return false;
+    }
+    
     if (search && search.trim()) {
       const q = search.trim().toLowerCase();
       const matchName = item.memberName.toLowerCase().includes(q);

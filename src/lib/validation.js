@@ -10,6 +10,10 @@
 
 export const VALID_GENDERS = ['Male', 'Female', 'Other'];
 
+export const VALID_BLOOD_GROUPS = [
+  'A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-', 'Unknown'
+];
+
 export const VALID_ID_TYPES = [
   'Aadhaar Card',
   'Voter ID (EPIC)',
@@ -116,8 +120,8 @@ export function validateGovernmentId(idType, idNumber) {
   const cleaned = String(idNumber).trim().toUpperCase().replace(/\s+/g, '');
 
   if (idType === 'Aadhaar Card') {
-    if (!/^\d{12}$/.test(cleaned)) {
-      return { valid: false, message: 'Aadhaar Number must be exactly 12 digits.' };
+    if (!/^[2-9]{1}[0-9]{11}$/.test(cleaned)) {
+      return { valid: false, message: 'Aadhaar Number must be 12 digits and cannot start with 0 or 1.' };
     }
   } else if (idType === 'PAN Card') {
     if (!/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(cleaned)) {
@@ -153,20 +157,13 @@ export function validateMembershipApplication(payload) {
   if (!payload.fullName || String(payload.fullName).trim().length < 3) {
     errors.fullName = 'Full Name is required (minimum 3 characters).';
   }
-  if (!payload.fatherName || String(payload.fatherName).trim().length < 2) {
-    errors.fatherName = 'Father Name is required.';
-  }
-  if (!payload.motherName || String(payload.motherName).trim().length < 2) {
-    errors.motherName = 'Mother Name is required.';
-  }
-
-  const dobCheck = validateDateOfBirth(payload.dob);
-  if (!dobCheck.valid) {
-    errors.dob = dobCheck.message;
-  }
 
   if (!payload.gender || !VALID_GENDERS.includes(payload.gender)) {
     errors.gender = 'Please select a valid Gender.';
+  }
+
+  if (!payload.bloodGroup || !VALID_BLOOD_GROUPS.includes(payload.bloodGroup)) {
+    errors.bloodGroup = 'Blood Group is mandatory. Please select a valid option.';
   }
 
   if (!isValidMobile(payload.mobile)) {
@@ -186,30 +183,15 @@ export function validateMembershipApplication(payload) {
   }
 
   // Address checks
-  if (!payload.houseNo || String(payload.houseNo).trim().length < 1) {
-    errors.houseNo = 'House / Door Number is required.';
-  }
   if (!payload.street || String(payload.street).trim().length < 2) {
     errors.street = 'Street / Colony Name is required.';
-  }
-  if (!payload.gramamName || String(payload.gramamName).trim().length < 2) {
-    errors.gramamName = 'Village / Gramam / Ward name is required.';
-  }
-  if (!payload.districtId) {
-    errors.districtId = 'Please select a District.';
-  }
-  if (!payload.constitutionId) {
-    errors.constitutionId = 'Please select a Constitution (Assembly Constituency).';
-  }
-  if (!payload.mandalId) {
-    errors.mandalId = 'Please select a Mandal.';
   }
   if (!isValidPincode(payload.pincode)) {
     errors.pincode = 'Enter a valid 6-digit Pincode.';
   }
 
   // ID Details checks
-  const idCheck = validateGovernmentId(payload.idType, payload.idNumber);
+  const idCheck = validateGovernmentId(payload.idType || 'Aadhaar Card', payload.idNumber);
   if (!idCheck.valid) {
     errors.idNumber = idCheck.message;
   }

@@ -28,43 +28,18 @@ export default function PublicOrganizationPage() {
           </div>
 
           <div className="grid-5" style={{ marginBottom: '24px' }}>
-            <div className="stat-card">
-              <div>
-                <div className="stat-label">State</div>
-                <div className="stat-value">1</div>
-                <div className="stat-subtext">Andhra Pradesh</div>
-              </div>
-            </div>
-            <div className="stat-card">
-              <div>
-                <div className="stat-label">Districts</div>
-                <div className="stat-value">{hierarchy.districts.length}</div>
-                <div className="stat-subtext">Active District Units</div>
-              </div>
-            </div>
-            <div className="stat-card">
-              <div>
-                <div className="stat-label">Constitutions</div>
-                <div className="stat-value">{hierarchy.constitutions.length}</div>
-                <div className="stat-subtext">Assembly Constituencies</div>
-              </div>
-            </div>
-            <div className="stat-card">
-              <div>
-                <div className="stat-label">Mandals</div>
-                <div className="stat-value">{hierarchy.mandals.length}</div>
-                <div className="stat-subtext">Mandal Committees</div>
-              </div>
-            </div>
-            <div className="stat-card">
-              <div>
-                <div className="stat-label">Gramams</div>
-                <div className="stat-value">{hierarchy.gramams.length}</div>
-                <div className="stat-subtext">
-                  <span className="badge badge-future">Future Feature</span>
+            {hierarchy.orgLevels.map((lvl) => {
+              const count = hierarchy.orgUnits.filter((u) => u.orgLevelId === lvl.id).length;
+              return (
+                <div key={lvl.id} className="stat-card">
+                  <div>
+                    <div className="stat-label">{lvl.name}</div>
+                    <div className="stat-value">{count}</div>
+                    <div className="stat-subtext">Active Units</div>
+                  </div>
                 </div>
-              </div>
-            </div>
+              );
+            })}
           </div>
 
           <OrganizationTree hierarchy={hierarchy} />

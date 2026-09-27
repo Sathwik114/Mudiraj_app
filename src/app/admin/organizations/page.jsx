@@ -2,29 +2,20 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import OrganizationTree from '@/components/OrganizationTree';
 import { Plus, Edit3, Power, Landmark, Building2, MapPin, Home } from 'lucide-react';
 
 export default function AdminOrganizationsPage() {
   const router = useRouter();
-  const [hierarchy, setHierarchy] = useState({
-    states: [],
-    districts: [],
-    constitutions: [],
-    mandals: [],
-    gramams: [],
-  });
-  const [activeTab, setActiveTab] = useState('District');
+  const [hierarchy, setHierarchy] = useState({ orgLevels: [], orgUnits: [] });
+  const [activeLevelId, setActiveLevelId] = useState(null);
   const [feedback, setFeedback] = useState({ type: '', text: '' });
 
-  // Add New Unit Form State
+  // Add Form State
   const [newName, setNewName] = useState('');
   const [newCode, setNewCode] = useState('');
-  const [selectedDistrictId, setSelectedDistrictId] = useState('');
-  const [selectedConstitutionId, setSelectedConstitutionId] = useState('');
-  const [selectedMandalId, setSelectedMandalId] = useState('');
+  const [selectedParents, setSelectedParents] = useState({});
 
-  // Edit Unit Modal State
+  // Edit Modal State
   const [editingUnit, setEditingUnit] = useState(null);
 
   const loadHierarchy = useCallback(async () => {
@@ -32,38 +23,56 @@ export default function AdminOrganizationsPage() {
     const data = await res.json();
     if (res.ok && data.hierarchy) {
       setHierarchy(data.hierarchy);
-      if (!selectedDistrictId && data.hierarchy.districts[0]) {
-        setSelectedDistrictId(data.hierarchy.districts[0].id);
+      if (!activeLevelId && data.hierarchy.orgLevels.length > 0) {
+        setActiveLevelId(data.hierarchy.orgLevels[0].id);
       }
     }
-  }, [selectedDistrictId]);
+  }, [activeLevelId]);
 
   useEffect(() => {
     loadHierarchy();
   }, [loadHierarchy]);
 
-  const filteredConstitutions = hierarchy.constitutions.filter(
-    (c) => !selectedDistrictId || c.districtId === selectedDistrictId
-  );
+  const activeLevel = hierarchy.orgLevels.find((l) => l.id === activeLevelId);
 
-  const filteredMandals = hierarchy.mandals.filter(
-    (m) => !selectedConstitutionId || m.constitutionId === selectedConstitutionId
-  );
+  // Determine which parent dropdowns to show
+  const requiredParentLevels = activeLevel
+    ? hierarchy.orgLevels
+        .filter((l) => l.levelRank < activeLevel.levelRank)
+        .sort((a, b) => a.levelRank - b.levelRank)
+    : [];
+
+  const handleParentSelect = (levelRank, unitId) => {
+    const newParents = { ...selectedParents, [levelRank]: unitId };
+    // Clear selections for downstream dropdowns
+    Object.keys(newParents).forEach((key) => {
+      if (parseInt(key) > levelRank) delete newParents[key];
+    });
+    setSelectedParents(newParents);
+  };
 
   async function handleCreateUnit(e) {
     e.preventDefault();
     setFeedback({ type: '', text: '' });
 
+    let parentId = null;
+    if (requiredParentLevels.length > 0) {
+      const immediateParentLevel = requiredParentLevels[requiredParentLevels.length - 1];
+      parentId = selectedParents[immediateParentLevel.levelRank];
+      if (!parentId) {
+        setFeedback({ type: 'error', text: `Please select a ${immediateParentLevel.name}` });
+        return;
+      }
+    }
+
     const res = await fetch('/api/admin/organizations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        level: activeTab,
+        orgLevelId: activeLevelId,
+        parentId,
         name: newName,
         code: newCode,
-        districtId: selectedDistrictId,
-        constitutionId: selectedConstitutionId,
-        mandalId: selectedMandalId,
       }),
     });
     const data = await res.json();
@@ -79,24 +88,14 @@ export default function AdminOrganizationsPage() {
     loadHierarchy();
   }
 
-  async function handleToggleStatus(level, unit) {
+  async function handleToggleStatus(unit) {
     const targetStatus = unit.status === 'Active' ? 'Inactive' : 'Active';
-    if (
-      !window.confirm(
-        `Change status of ${level} "${unit.name}" to ${targetStatus}?\n\n(Organizational records are preserved with Active/Inactive status rather than permanent deletion.)`
-      )
-    ) {
-      return;
-    }
+    if (!window.confirm(`Change status of "${unit.name}" to ${targetStatus}?`)) return;
 
     const res = await fetch('/api/admin/organizations', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        level,
-        id: unit.id,
-        status: targetStatus,
-      }),
+      body: JSON.stringify({ id: unit.id, status: targetStatus }),
     });
     const data = await res.json();
     if (res.ok) {
@@ -110,12 +109,10 @@ export default function AdminOrganizationsPage() {
   async function handleSaveEdit(e) {
     e.preventDefault();
     if (!editingUnit) return;
-
     const res = await fetch('/api/admin/organizations', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        level: editingUnit.level,
         id: editingUnit.id,
         name: editingUnit.name,
         code: editingUnit.code,
@@ -132,375 +129,215 @@ export default function AdminOrganizationsPage() {
     }
   }
 
-  const levels = [
-    { key: 'State', label: 'State (Andhra Pradesh)', icon: Landmark, count: hierarchy.states.length },
-    { key: 'District', label: 'Districts', icon: Building2, count: hierarchy.districts.length },
-    { key: 'Constitution', label: 'Constitutions', icon: MapPin, count: hierarchy.constitutions.length },
-    { key: 'Mandal', label: 'Mandals', icon: MapPin, count: hierarchy.mandals.length },
-    { key: 'Gramam', label: 'Gramam (Future Feature)', icon: Home, count: hierarchy.gramams.length },
-  ];
+  const currentLevelUnits = hierarchy.orgUnits.filter((u) => u.orgLevelId === activeLevelId);
 
   return (
-    <div>
-      <div style={{ marginBottom: '20px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: 800, color: 'var(--primary-dark)' }}>
-          Organization Structure Management
-        </h1>
-        <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-          Manage State → District → Constitution → Mandal → Gramam hierarchy. Every created unit
-          automatically initializes its Main Team, Youth Team, and Mahila Team.
+    <div className="p-6">
+      <div className="mb-6">
+        <h1 className="text-2xl font-extrabold text-gray-900">Organization / Team Master</h1>
+        <p className="text-sm text-gray-600 mt-1">
+          Manage dynamic geographic locations. Every created unit automatically initializes its 3 Core Teams (Main, Youth, Ladies).
         </p>
       </div>
 
       {feedback.text && (
-        <div className={`alert ${feedback.type === 'error' ? 'alert-error' : 'alert-success'}`}>
-          <span>{feedback.text}</span>
+        <div className={`p-4 mb-6 rounded-md text-sm ${feedback.type === 'error' ? 'bg-red-50 text-red-800' : 'bg-green-50 text-green-800'}`}>
+          {feedback.text}
         </div>
       )}
 
-      {/* Level Selector Tabs */}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
-        {levels.map((lvl) => {
-          const Icon = lvl.icon;
+      {/* Tabs */}
+      <div className="flex flex-wrap gap-2 mb-6">
+        {hierarchy.orgLevels.map((lvl) => {
+          const count = hierarchy.orgUnits.filter((u) => u.orgLevelId === lvl.id).length;
           return (
             <button
-              key={lvl.key}
-              type="button"
-              className={`btn ${activeTab === lvl.key ? 'btn-primary' : 'btn-outline'}`}
-              onClick={() => setActiveTab(lvl.key)}
+              key={lvl.id}
+              onClick={() => {
+                setActiveLevelId(lvl.id);
+                setSelectedParents({});
+                setFeedback({type:'', text:''});
+              }}
+              className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                activeLevelId === lvl.id
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+              }`}
             >
-              <Icon size={15} /> {lvl.label} ({lvl.count})
+              {lvl.name} ({count})
             </button>
           );
         })}
       </div>
 
-      {/* Add & Manage Section */}
-      {activeTab === 'State' ? (
-        <div className="card" style={{ marginBottom: '24px' }}>
-          <div className="card-header">
-            <h2 className="card-title">Active State Jurisdiction</h2>
-            <span className="badge badge-active">Primary State</span>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Add Form */}
+        <div className="lg:col-span-1 bg-white border border-gray-200 rounded-lg shadow-sm">
+          <div className="px-5 py-4 border-b border-gray-200 bg-gray-50 rounded-t-lg">
+            <h2 className="font-semibold text-gray-800">Add New {activeLevel?.name}</h2>
           </div>
-          <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-            Currently the system is configured for <strong>Andhra Pradesh</strong>. All Districts,
-            Assembly Constitutions, Mandals, and Gramams operate under Andhra Pradesh.
-          </p>
-          <div className="table-container">
-            <table className="data-table">
-              <thead>
+          <form onSubmit={handleCreateUnit} className="p-5 flex flex-col gap-4">
+            
+            {/* Dynamic Cascading Dropdowns */}
+            {requiredParentLevels.map((parentLvl, index) => {
+              // The options for this dropdown depend on the selection in the *previous* dropdown
+              let options = hierarchy.orgUnits.filter(u => u.orgLevelId === parentLvl.id);
+              if (index > 0) {
+                const prevLvlRank = requiredParentLevels[index - 1].levelRank;
+                const selectedPrevParentId = selectedParents[prevLvlRank];
+                options = options.filter(u => u.parentId === selectedPrevParentId);
+              }
+
+              return (
+                <div key={parentLvl.id} className="flex flex-col gap-1">
+                  <label className="text-sm font-medium text-gray-700">
+                    Select {parentLvl.name} *
+                  </label>
+                  <select
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={selectedParents[parentLvl.levelRank] || ''}
+                    onChange={(e) => handleParentSelect(parentLvl.levelRank, e.target.value)}
+                    required
+                  >
+                    <option value="">-- Choose {parentLvl.name} --</option>
+                    {options.map((opt) => (
+                      <option key={opt.id} value={opt.id}>{opt.name}</option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })}
+
+            <div className="flex flex-col gap-1">
+              <label className="text-sm font-medium text-gray-700">{activeLevel?.name} Name *</label>
+              <input
+                type="text"
+                required
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder={`Enter ${activeLevel?.name} Name`}
+              />
+            </div>
+            
+            <div className="flex flex-col gap-1">
+              <label className="text-sm font-medium text-gray-700">Code (Optional)</label>
+              <input
+                type="text"
+                value={newCode}
+                onChange={(e) => setNewCode(e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Auto-generated if empty"
+              />
+            </div>
+
+            <button type="submit" className="mt-2 w-full bg-blue-600 text-white font-medium py-2 rounded-md hover:bg-blue-700 flex items-center justify-center gap-2">
+              <Plus size={18} /> Create & Init Teams
+            </button>
+          </form>
+        </div>
+
+        {/* List */}
+        <div className="lg:col-span-2 bg-white border border-gray-200 rounded-lg shadow-sm">
+          <div className="px-5 py-4 border-b border-gray-200 bg-gray-50 rounded-t-lg">
+            <h2 className="font-semibold text-gray-800">Existing {activeLevel?.name} Records</h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-white">
                 <tr>
-                  <th>State Name</th>
-                  <th>State Code</th>
-                  <th>Districts</th>
-                  <th>Constitutions</th>
-                  <th>Mandals</th>
-                  <th>Status</th>
-                  <th style={{ textAlign: 'right' }}>Teams</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Name & Code</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Parent Path</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Status</th>
+                  <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Actions</th>
                 </tr>
               </thead>
-              <tbody>
-                {hierarchy.states.map((st) => (
-                  <tr key={st.id}>
-                    <td style={{ fontWeight: 800 }}>{st.name}</td>
-                    <td><code>{st.code}</code></td>
-                    <td>{hierarchy.districts.length}</td>
-                    <td>{hierarchy.constitutions.length}</td>
-                    <td>{hierarchy.mandals.length}</td>
-                    <td><span className="badge badge-active">{st.status}</span></td>
-                    <td style={{ textAlign: 'right' }}>
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-sm"
-                        onClick={() => router.push(`/admin/teams?orgLevel=State&orgId=${st.id}`)}
-                      >
-                        Manage State Teams
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ) : (
-        <div className="grid-2" style={{ marginBottom: '24px', alignItems: 'start' }}>
-          {/* Add Form */}
-          <div className="card" style={{ borderTop: '4px solid var(--primary)' }}>
-            <div className="card-header">
-              <h2 className="card-title">
-                Add New {activeTab}
-                {activeTab === 'Gramam' && (
-                  <span className="badge badge-future" style={{ marginLeft: '8px' }}>
-                    Future Feature Ready
-                  </span>
-                )}
-              </h2>
-            </div>
-
-            {activeTab === 'Gramam' && (
-              <div className="alert alert-info">
-                Gramam functionality is pre-built in the database and team architecture so no
-                restructuring is required when Gramam-level enrollment opens.
-              </div>
-            )}
-
-            <form onSubmit={handleCreateUnit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div className="form-group">
-                <label className="form-label">State</label>
-                <input type="text" className="form-control" value="Andhra Pradesh" readOnly />
-              </div>
-
-              {['Constitution', 'Mandal', 'Gramam'].includes(activeTab) && (
-                <div className="form-group">
-                  <label className="form-label">Select District *</label>
-                  <select
-                    className="form-control"
-                    value={selectedDistrictId}
-                    onChange={(e) => {
-                      setSelectedDistrictId(e.target.value);
-                      setSelectedConstitutionId('');
-                      setSelectedMandalId('');
-                    }}
-                    required
-                  >
-                    <option value="">-- Select District --</option>
-                    {hierarchy.districts.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name} ({d.code})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {['Mandal', 'Gramam'].includes(activeTab) && (
-                <div className="form-group">
-                  <label className="form-label">Select Constitution *</label>
-                  <select
-                    className="form-control"
-                    value={selectedConstitutionId}
-                    onChange={(e) => {
-                      setSelectedConstitutionId(e.target.value);
-                      setSelectedMandalId('');
-                    }}
-                    required
-                  >
-                    <option value="">-- Select Constitution --</option>
-                    {filteredConstitutions.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} ({c.code})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {activeTab === 'Gramam' && (
-                <div className="form-group">
-                  <label className="form-label">Select Mandal *</label>
-                  <select
-                    className="form-control"
-                    value={selectedMandalId}
-                    onChange={(e) => setSelectedMandalId(e.target.value)}
-                    required
-                  >
-                    <option value="">-- Select Mandal --</option>
-                    {filteredMandals.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              <div className="form-group">
-                <label className="form-label">{activeTab} Name *</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  placeholder={`Enter ${activeTab} name`}
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">{activeTab} Code (Optional)</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  placeholder="Auto-generated if left blank"
-                  value={newCode}
-                  onChange={(e) => setNewCode(e.target.value)}
-                />
-              </div>
-
-              <button type="submit" className="btn btn-primary">
-                <Plus size={16} /> Create {activeTab} &amp; Initialize 3 Teams
-              </button>
-            </form>
-          </div>
-
-          {/* List of Units for Current Level */}
-          <div className="card">
-            <div className="card-header">
-              <h2 className="card-title">Existing {activeTab} Records</h2>
-            </div>
-
-            <div className="table-container" style={{ maxHeight: '460px', overflowY: 'auto' }}>
-              <table className="data-table">
-                <thead>
+              <tbody className="divide-y divide-gray-200 bg-white">
+                {currentLevelUnits.length === 0 ? (
                   <tr>
-                    <th>{activeTab} Name &amp; Code</th>
-                    <th>Parent Hierarchy</th>
-                    <th>Status</th>
-                    <th style={{ textAlign: 'right' }}>Actions</th>
+                    <td colSpan="4" className="px-6 py-4 text-center text-sm text-gray-500">No records found.</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {(activeTab === 'District'
-                    ? hierarchy.districts
-                    : activeTab === 'Constitution'
-                    ? hierarchy.constitutions
-                    : activeTab === 'Mandal'
-                    ? hierarchy.mandals
-                    : hierarchy.gramams
-                  ).map((unit) => (
-                    <tr key={unit.id}>
-                      <td>
-                        <div style={{ fontWeight: 700 }}>{unit.name}</div>
-                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                          Code: {unit.code}
+                ) : (
+                  currentLevelUnits.map((unit) => (
+                    <tr key={unit.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="font-bold text-gray-900">{unit.name}</div>
+                        <div className="text-xs text-gray-500">{unit.code}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-xs text-gray-600 max-w-[200px] truncate" title={unit.locationLabel}>
+                          {unit.locationLabel || '-'}
                         </div>
                       </td>
-                      <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                        {activeTab === 'District' && 'Andhra Pradesh'}
-                        {activeTab === 'Constitution' && `${unit.districtName} District`}
-                        {activeTab === 'Mandal' &&
-                          `${unit.districtName} › ${unit.constitutionName}`}
-                        {activeTab === 'Gramam' &&
-                          `${unit.districtName} › ${unit.mandalName}`}
-                      </td>
-                      <td>
-                        <span
-                          className={`badge ${
-                            unit.status === 'Active' ? 'badge-active' : 'badge-inactive'
-                          }`}
-                        >
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${unit.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
                           {unit.status}
                         </span>
                       </td>
-                      <td style={{ textAlign: 'right' }}>
-                        <div style={{ display: 'inline-flex', gap: '6px' }}>
-                          <button
-                            type="button"
-                            className="btn btn-outline btn-sm"
-                            onClick={() =>
-                              setEditingUnit({
-                                level: activeTab,
-                                ...unit,
-                              })
-                            }
-                            title="Edit Name / Code"
-                          >
-                            <Edit3 size={13} />
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <div className="flex items-center justify-end gap-2">
+                          <button onClick={() => setEditingUnit(unit)} className="text-gray-500 hover:text-blue-600 border border-gray-300 rounded p-1">
+                            <Edit3 size={14} />
                           </button>
-                          <button
-                            type="button"
-                            className="btn btn-outline btn-sm"
-                            onClick={() => handleToggleStatus(activeTab, unit)}
-                            title="Activate / Deactivate"
-                          >
-                            <Power size={13} />
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-primary btn-sm"
-                            onClick={() =>
-                              router.push(`/admin/teams?orgLevel=${activeTab}&orgId=${unit.id}`)
-                            }
-                          >
-                            Teams
+                          <button onClick={() => handleToggleStatus(unit)} className="text-gray-500 hover:text-red-600 border border-gray-300 rounded p-1">
+                            <Power size={14} />
                           </button>
                         </div>
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
-      )}
+      </div>
 
-      {/* Full Interactive Organization Tree */}
-      <OrganizationTree
-        hierarchy={hierarchy}
-        onSelectUnit={({ level, unit }) =>
-          router.push(`/admin/teams?orgLevel=${level}&orgId=${unit.id}`)
-        }
-      />
-
-      {/* EDIT ORGANIZATION MODAL */}
+      {/* Edit Modal */}
       {editingUnit && (
-        <div className="modal-backdrop" onClick={() => setEditingUnit(null)}>
-          <div className="modal-panel" style={{ maxWidth: '460px' }} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3 style={{ fontSize: '17px', fontWeight: 700 }}>
-                Edit {editingUnit.level} — {editingUnit.name}
-              </h3>
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg max-w-md w-full shadow-xl">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h3 className="font-bold text-lg">Edit {activeLevel?.name}</h3>
             </div>
             <form onSubmit={handleSaveEdit}>
-              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <div className="form-group">
-                  <label className="form-label">{editingUnit.level} Name *</label>
+              <div className="px-6 py-4 flex flex-col gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
                   <input
                     type="text"
-                    className="form-control"
-                    value={editingUnit.name}
-                    onChange={(e) =>
-                      setEditingUnit({ ...editingUnit, name: e.target.value })
-                    }
                     required
+                    value={editingUnit.name}
+                    onChange={(e) => setEditingUnit({ ...editingUnit, name: e.target.value })}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2"
                   />
                 </div>
-                <div className="form-group">
-                  <label className="form-label">Code</label>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Code</label>
                   <input
                     type="text"
-                    className="form-control"
                     value={editingUnit.code}
-                    onChange={(e) =>
-                      setEditingUnit({ ...editingUnit, code: e.target.value })
-                    }
+                    onChange={(e) => setEditingUnit({ ...editingUnit, code: e.target.value })}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2"
                   />
                 </div>
-                <div className="form-group">
-                  <label className="form-label">Status</label>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
                   <select
-                    className="form-control"
                     value={editingUnit.status}
-                    onChange={(e) =>
-                      setEditingUnit({ ...editingUnit, status: e.target.value })
-                    }
+                    onChange={(e) => setEditingUnit({ ...editingUnit, status: e.target.value })}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2"
                   >
                     <option value="Active">Active</option>
                     <option value="Inactive">Inactive</option>
                   </select>
                 </div>
               </div>
-              <div className="modal-footer">
-                <button
-                  type="button"
-                  className="btn btn-outline"
-                  onClick={() => setEditingUnit(null)}
-                >
+              <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3 bg-gray-50 rounded-b-lg">
+                <button type="button" onClick={() => setEditingUnit(null)} className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100 font-medium text-sm">
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary">
+                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium text-sm">
                   Save Changes
                 </button>
               </div>

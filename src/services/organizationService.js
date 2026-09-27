@@ -3,13 +3,14 @@ import {
   getOrganizationById,
   createOrganizationUnit,
   updateOrganizationUnit,
+  getHierarchyPath,
 } from '@/lib/organizations';
 import { getDatabase } from '@/lib/database';
 
 /**
  * Organization Service (`services/organizationService.js`)
  * --------------------------------------------------------
- * Manages State -> District -> Constitution -> Mandal -> Gramam structure.
+ * Manages the dynamic organizational structure.
  */
 
 export const organizationService = {
@@ -17,65 +18,34 @@ export const organizationService = {
     const raw = getAllOrganizationHierarchy({ includeInactive });
     const db = getDatabase();
 
-    // Attach counts to each organizational entity for rich UI display
-    const districts = raw.districts.map((d) => ({
-      ...d,
-      constitutionsCount: db.constitutions.filter((c) => c.districtId === d.id).length,
-      mandalsCount: db.mandals.filter((m) => m.districtId === d.id).length,
-      membersCount: db.members.filter(
-        (m) => m.districtId === d.id && ['Active', 'Approved'].includes(m.status)
-      ).length,
-    }));
+    // Attach counts and hierarchy path to each org unit
+    const enrichedUnits = raw.orgUnits.map((u) => {
+      const childrenCount = db.orgUnits.filter((child) => child.parentId === u.id).length;
+      const membersCount = db.members.filter(
+        (m) => m.orgUnitId === u.id && ['Active', 'Approved'].includes(m.status)
+      ).length;
+      
+      const path = getHierarchyPath(u.id);
+      const parentName = u.parentId ? db.orgUnits.find(p => p.id === u.parentId)?.name : null;
 
-    const constitutions = raw.constitutions.map((c) => {
-      const dist = db.districts.find((d) => d.id === c.districtId);
       return {
-        ...c,
-        districtName: dist?.name || '',
-        mandalsCount: db.mandals.filter((m) => m.constitutionId === c.id).length,
-        membersCount: db.members.filter(
-          (m) => m.constitutionId === c.id && ['Active', 'Approved'].includes(m.status)
-        ).length,
-      };
-    });
-
-    const mandals = raw.mandals.map((m) => {
-      const dist = db.districts.find((d) => d.id === m.districtId);
-      const cons = db.constitutions.find((c) => c.id === m.constitutionId);
-      return {
-        ...m,
-        districtName: dist?.name || '',
-        constitutionName: cons?.name || '',
-        gramamsCount: db.gramams.filter((g) => g.mandalId === m.id).length,
-        membersCount: db.members.filter(
-          (mem) => mem.mandalId === m.id && ['Active', 'Approved'].includes(mem.status)
-        ).length,
-      };
-    });
-
-    const gramams = raw.gramams.map((g) => {
-      const dist = db.districts.find((d) => d.id === g.districtId);
-      const cons = db.constitutions.find((c) => c.id === g.constitutionId);
-      const mnd = db.mandals.find((m) => m.id === g.mandalId);
-      return {
-        ...g,
-        districtName: dist?.name || '',
-        constitutionName: cons?.name || '',
-        mandalName: mnd?.name || '',
+        ...u,
+        parentName,
+        childrenCount,
+        membersCount,
+        hierarchyPath: path,
+        locationLabel: path.map(p => p.name).join(' › '),
       };
     });
 
     return {
-      states: raw.states,
-      districts,
-      constitutions,
-      mandals,
-      gramams,
+      orgLevels: raw.orgLevels,
+      orgUnits: enrichedUnits,
     };
   },
 
-  getUnitById(level, id) {
-    return getOrganizationById(level, id);
+  getUnitById(id) {
+    return getOrganizationById(id);
   },
 
   createUnit(payload) {

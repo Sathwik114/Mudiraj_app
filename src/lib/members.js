@@ -2,11 +2,20 @@ import {
   getDatabase,
   saveDatabase,
   generateUuid,
-  dbAdapter,
+  getNextSequence,
   recordAuditLog,
 } from './database.js';
 import { generateNextMembershipId } from './membershipId.js';
 import { maskIdNumber } from './validation.js';
+import { getHierarchyPath } from './organizations.js';
+
+const localDbAdapter = {
+  incrementSequence: (sequenceName) => getNextSequence(sequenceName),
+  isMembershipIdTaken: (id) => {
+    const db = getDatabase();
+    return !!db.members.find(m => m.membershipId === id);
+  }
+};
 
 /**
  * Member & Application Repository Layer (`lib/members.js`)
@@ -183,24 +192,37 @@ export function lookupPublicMembershipStatus(query) {
 
   if (!member) return null;
 
+  const path = getHierarchyPath(member.orgUnitId);
+  const getUnitByRank = (rank) => {
+    const level = db.orgLevels.find(l => l.levelRank === rank);
+    return path.find(p => p.orgLevelId === level?.id)?.name || '';
+  };
+
   return {
     applicationNo: member.applicationNo,
     membershipId: member.membershipId,
     fullName: member.fullName,
     fatherName: member.fatherName,
     gender: member.gender,
-    districtName: member.districtName,
-    constitutionName: member.constitutionName,
-    mandalName: member.mandalName,
-    gramamName: member.gramamName,
-    stateName: member.stateName,
+    dob: member.dob,
+    mobile: member.mobile,
+    photoUrl: member.photoUrl,
+    districtName: getUnitByRank(2) || member.districtName,
+    constitutionName: getUnitByRank(3) || member.constitutionName,
+    mandalName: getUnitByRank(4) || member.mandalName,
+    gramamName: getUnitByRank(5) || member.gramamName,
+    stateName: getUnitByRank(1) || member.stateName,
     status: member.status,
     applicationDate: member.applicationDate,
     approvalDate: member.approvalDate,
     remarks: member.remarks,
+    bloodGroup: member.bloodGroup,
+    street: member.street,
+    pincode: member.pincode,
     // Sensitive ID number and full contact info intentionally omitted/masked for public privacy
     maskedIdNumber: maskIdNumber(member.idNumber),
     idType: member.idType,
+    leadershipPositions: enrichMemberWithLeadership(member, db).leadershipPositions,
   };
 }
 
@@ -223,16 +245,18 @@ export function createMembershipApplication(payload, { autoApprove = false, acto
     );
   }
 
-  const district = db.districts.find((d) => d.id === payload.districtId);
-  const constitution = db.constitutions.find((c) => c.id === payload.constitutionId);
-  const mandal = db.mandals.find((m) => m.id === payload.mandalId);
-  const gramam = payload.gramamId ? db.gramams.find((g) => g.id === payload.gramamId) : null;
+  const path = getHierarchyPath(payload.orgUnitId);
+  const getUnitByRank = (rank) => {
+    const level = db.orgLevels.find(l => l.levelRank === rank);
+    return path.find(p => p.orgLevelId === level?.id) || null;
+  };
 
-  if (!district || !constitution || !mandal) {
-    throw new Error('Selected District, Constitution, and Mandal must be valid.');
-  }
+  const district = getUnitByRank(2);
+  const constitution = getUnitByRank(3);
+  const mandal = getUnitByRank(4);
+  const gramam = getUnitByRank(5);
 
-  const nextAppSeq = dbAdapter.incrementSequence('applicationNo');
+  const nextAppSeq = localDbAdapter.incrementSequence('applicationNo');
   const applicationNo = `APP-2026-${String(nextAppSeq).padStart(4, '0')}`;
   const now = new Date().toISOString();
 
@@ -242,7 +266,7 @@ export function createMembershipApplication(payload, { autoApprove = false, acto
   let approvedBy = null;
 
   if (autoApprove) {
-    membershipId = generateNextMembershipId(dbAdapter);
+    membershipId = generateNextMembershipId(localDbAdapter);
     status = 'Active';
     approvalDate = now;
     approvedBy = actor;
@@ -252,27 +276,30 @@ export function createMembershipApplication(payload, { autoApprove = false, acto
     id: generateUuid('mem'),
     applicationNo,
     membershipId,
-    fullName: String(payload.fullName).trim(),
-    fatherName: String(payload.fatherName).trim(),
-    motherName: String(payload.motherName).trim(),
-    dob: payload.dob,
+    fullName: payload.fullName ? String(payload.fullName).trim() : '',
+    fatherName: payload.fatherName ? String(payload.fatherName).trim() : '',
+    motherName: payload.motherName ? String(payload.motherName).trim() : '',
+    dob: payload.dob || '',
     gender: payload.gender,
+    bloodGroup: payload.bloodGroup || 'Unknown',
     mobile: cleanedMobile,
     alternateMobile: payload.alternateMobile ? String(payload.alternateMobile).trim() : '',
     email: payload.email ? String(payload.email).trim() : '',
     photoUrl: payload.photoUrl || '',
-    houseNo: String(payload.houseNo).trim(),
-    street: String(payload.street).trim(),
+    houseNo: payload.houseNo ? String(payload.houseNo).trim() : '',
+    street: payload.street ? String(payload.street).trim() : '',
+    orgUnitId: payload.orgUnitId,
+    locationPath: '/' + path.map(p => p.id).join('/') + '/',
     gramamId: gramam ? gramam.id : null,
     gramamName: gramam ? gramam.name : String(payload.gramamName || '').trim(),
-    mandalId: mandal.id,
-    mandalName: mandal.name,
-    constitutionId: constitution.id,
-    constitutionName: constitution.name,
-    districtId: district.id,
-    districtName: district.name,
-    stateId: 'state-ap',
-    stateName: 'Andhra Pradesh',
+    mandalId: mandal ? mandal.id : null,
+    mandalName: mandal ? mandal.name : '',
+    constitutionId: constitution ? constitution.id : null,
+    constitutionName: constitution ? constitution.name : '',
+    districtId: district ? district.id : null,
+    districtName: district ? district.name : '',
+    stateId: path.length > 0 ? path[0].id : null,
+    stateName: path.length > 0 ? path[0].name : '',
     pincode: String(payload.pincode).trim(),
     idType: payload.idType,
     idNumber: String(payload.idNumber).trim().toUpperCase(),
@@ -280,6 +307,7 @@ export function createMembershipApplication(payload, { autoApprove = false, acto
     applicationDate: now,
     approvalDate,
     approvedBy,
+    sponsorId: payload.sponsorId || null,
     remarks:
       payload.remarks ||
       (autoApprove
@@ -322,7 +350,7 @@ export function approveMembershipApplication({
 
   const now = new Date().toISOString();
   if (!member.membershipId) {
-    member.membershipId = generateNextMembershipId(dbAdapter);
+    member.membershipId = generateNextMembershipId(localDbAdapter);
   }
   member.status = ['Active', 'Approved'].includes(targetStatus) ? targetStatus : 'Active';
   member.approvalDate = member.approvalDate || now;
@@ -390,6 +418,7 @@ export function updateMemberRecord({ memberId, updates, actor = 'admin' }) {
     'motherName',
     'dob',
     'gender',
+    'bloodGroup',
     'mobile',
     'alternateMobile',
     'email',
@@ -434,7 +463,7 @@ export function updateMemberRecord({ memberId, updates, actor = 'admin' }) {
   // If transitioning to Approved or Active and no Membership ID exists yet, generate one!
   if (updates.status && updates.status !== member.status) {
     if (['Approved', 'Active'].includes(updates.status) && !member.membershipId) {
-      member.membershipId = generateNextMembershipId(dbAdapter);
+      member.membershipId = generateNextMembershipId(localDbAdapter);
       member.approvalDate = new Date().toISOString();
       member.approvedBy = actor;
     }
@@ -455,4 +484,32 @@ export function updateMemberRecord({ memberId, updates, actor = 'admin' }) {
   });
 
   return enrichMemberWithLeadership(member, db);
+}
+
+/**
+ * Permanently deletes a member record.
+ */
+export function deleteMemberRecord({ memberId, actor = 'admin' }) {
+  const db = getDatabase();
+  const index = db.members.findIndex((m) => m.id === memberId);
+  if (index === -1) throw new Error('Member record not found.');
+
+  const member = db.members[index];
+
+  // Also remove from any leadership positions
+  db.teamMembers = db.teamMembers.filter(tm => tm.memberId !== memberId);
+
+  // Remove the member
+  db.members.splice(index, 1);
+  saveDatabase(db);
+
+  recordAuditLog({
+    action: 'MEMBER_DELETED',
+    entityType: 'Member',
+    entityId: memberId,
+    actor,
+    details: `Deleted member ${member.fullName} (${member.membershipId || member.applicationNo}).`,
+  });
+
+  return { success: true };
 }
