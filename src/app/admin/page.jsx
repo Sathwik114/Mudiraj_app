@@ -216,43 +216,6 @@ export default function AdminDashboardPage() {
           </div>
         </div>
 
-        {/* Recent System Audit Logs */}
-        <div className="card">
-          <div className="card-header">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Activity size={18} color="var(--primary)" />
-              <h2 className="card-title">Recent Administrative Audit Trail</h2>
-            </div>
-            <Link href="/admin/settings" className="btn btn-outline btn-sm">
-              Full Logs
-            </Link>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {data.recentAuditLogs.slice(0, 6).map((log) => (
-              <div
-                key={log.id}
-                style={{
-                  padding: '10px 12px',
-                  background: 'var(--bg-body)',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border-color)',
-                  fontSize: '13px',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                  <span style={{ fontWeight: 700, color: 'var(--primary)' }}>{log.action}</span>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                    {new Date(log.createdAt).toLocaleDateString()}
-                  </span>
-                </div>
-                <div style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
-                  {log.details}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
       </div>
     </div>
   );

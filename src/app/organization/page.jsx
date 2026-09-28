@@ -14,24 +14,24 @@ export default function PublicOrganizationPage() {
 
       <main className="main-content" style={{ padding: '36px 0' }}>
         <div className="container">
-          <div style={{ marginBottom: '24px' }}>
-            <span className="badge badge-info" style={{ marginBottom: '8px' }}>
+          <div className="animate-fade-in-up" style={{ marginBottom: '32px' }}>
+            <span className="badge badge-info" style={{ marginBottom: '10px' }}>
               5-Tier Organizational Structure
             </span>
-            <h1 style={{ fontSize: '26px', fontWeight: 800, color: 'var(--primary-dark)' }}>
+            <h1 style={{ fontSize: '28px', fontWeight: 800, color: 'var(--primary-dark)' }}>
               Andhra Pradesh Mudiraj Community Organizational Hierarchy
             </h1>
-            <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+            <p style={{ fontSize: '15px', color: 'var(--text-secondary)', marginTop: '8px', maxWidth: '800px', lineHeight: 1.6 }}>
               Explore our active State, District, Assembly Constitution, Mandal, and Gramam
-              organizational units across Andhra Pradesh.
+              organizational units across Andhra Pradesh. Use the search to quickly find a specific unit.
             </p>
           </div>
 
-          <div className="grid-5" style={{ marginBottom: '24px' }}>
-            {hierarchy.orgLevels.map((lvl) => {
+          <div className="grid-5" style={{ marginBottom: '36px' }}>
+            {hierarchy.orgLevels.map((lvl, index) => {
               const count = hierarchy.orgUnits.filter((u) => u.orgLevelId === lvl.id).length;
               return (
-                <div key={lvl.id} className="stat-card">
+                <div key={lvl.id} className="stat-card animate-fade-in-up" style={{ animationDelay: `${(index + 1) * 100}ms` }}>
                   <div>
                     <div className="stat-label">{lvl.name}</div>
                     <div className="stat-value">{count}</div>

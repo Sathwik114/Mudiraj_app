@@ -8,29 +8,40 @@ export default function MemberForm({
   hierarchy,
   isAdminMode = false,
   onSuccess = null,
+  initialData = null,
+  isEditMode = false,
 }) {
   const [formData, setFormData] = useState({
-    fullName: '',
-    fatherName: '',
-    motherName: '',
-    dob: '',
-    gender: 'Male',
-    bloodGroup: 'Unknown',
-    mobile: '',
-    alternateMobile: '',
-    email: '',
-    photoUrl: '',
-    houseNo: '',
-    street: '',
-    orgUnitId: '',
-    pincode: '',
-    idType: 'Aadhaar Card',
-    idNumber: '',
-    remarks: '',
+    fullName: initialData?.fullName || '',
+    fatherName: initialData?.fatherName || '',
+    motherName: initialData?.motherName || '',
+    dob: initialData?.dob || '',
+    gender: initialData?.gender || 'Male',
+    bloodGroup: initialData?.bloodGroup || 'Unknown',
+    mobile: initialData?.mobile || '',
+    alternateMobile: initialData?.alternateMobile || '',
+    email: initialData?.email || '',
+    photoUrl: initialData?.photoUrl || '',
+    houseNo: initialData?.houseNo || '',
+    street: initialData?.street || '',
+    orgUnitId: initialData?.orgUnitId || '',
+    pincode: initialData?.pincode || '',
+    idType: initialData?.idType || 'Aadhaar Card',
+    idNumber: initialData?.idNumber || '',
+    remarks: initialData?.remarks || '',
     autoApprove: isAdminMode,
   });
 
-  const [selectedParents, setSelectedParents] = useState({});
+  const [selectedParents, setSelectedParents] = useState(() => {
+    if (initialData) {
+      return {
+        District: initialData.districtId || '',
+        Constitution: initialData.constitutionId || '',
+        Mandal: initialData.mandalId || '',
+      };
+    }
+    return {};
+  });
   const [errors, setErrors] = useState({});
   const [serverError, setServerError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -169,11 +180,12 @@ export default function MemberForm({
     setSubmitting(true);
     try {
       const endpoint = isAdminMode ? '/api/admin/members' : '/api/public/apply';
-      const res = await fetch(endpoint, {
-        method: 'POST',
+      const fetchOptions = {
+        method: isEditMode ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+        body: JSON.stringify(isEditMode ? { memberId: initialData.id, updates: payload } : payload),
+      };
+      const res = await fetch(endpoint, fetchOptions);
       const data = await res.json();
 
       if (!res.ok) {

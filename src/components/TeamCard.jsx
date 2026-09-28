@@ -8,6 +8,7 @@ import {
   SlidersHorizontal,
   Award,
   Search,
+  MapPin,
 } from 'lucide-react';
 
 /**
@@ -234,13 +235,13 @@ export default function TeamCard({
         </div>
       </div>
 
-      {/* Position Structure Summary Pills */}
+      {/* Position Structure Summary Pills (Compact) */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(155px, 1fr))',
-          gap: '8px',
-          marginBottom: '16px',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
+          gap: '6px',
+          marginBottom: '12px',
         }}
       >
         {positionDefinitions.map((pos) => {
@@ -249,20 +250,21 @@ export default function TeamCard({
             <div
               key={pos.code}
               style={{
-                padding: '8px 10px',
+                padding: '4px 8px',
                 background: filled > 0 ? 'var(--primary-light)' : 'var(--bg-muted)',
-                borderRadius: '6px',
+                borderRadius: '4px',
                 border: '1px solid var(--border-color)',
-                fontSize: '12px',
+                fontSize: '11px',
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
               }}
             >
-              <span style={{ fontWeight: 600 }}>{pos.title}</span>
+              <span style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pos.title}</span>
               <span
                 style={{
                   fontWeight: 800,
+                  marginLeft: '4px',
                   color: filled >= pos.maxCount ? 'var(--success)' : 'var(--primary)',
                 }}
               >
@@ -277,92 +279,99 @@ export default function TeamCard({
       {leaders.length === 0 ? (
         <div
           style={{
-            padding: '22px',
+            padding: '16px',
             textAlign: 'center',
             background: 'var(--bg-muted)',
-            borderRadius: '8px',
-            fontSize: '13px',
+            borderRadius: '6px',
+            fontSize: '12px',
             color: 'var(--text-muted)',
           }}
         >
-          <UsersRound size={22} style={{ marginBottom: '4px', opacity: 0.6 }} />
+          <UsersRound size={18} style={{ marginBottom: '4px', opacity: 0.6 }} />
           <div>No leadership positions assigned in this {team.teamType} yet.</div>
         </div>
       ) : (
-        <div className="table-container">
-          <table className="data-table">
-            <thead>
+        <div className="table-container" style={{ margin: '0 -24px -24px -24px', borderTop: '1px solid var(--border-color)', borderRadius: '0 0 12px 12px' }}>
+          <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+            <thead style={{ background: 'var(--bg-muted)' }}>
               <tr>
-                <th>Position</th>
-                <th>Leader Name</th>
-                <th>Membership ID</th>
-                <th>Photo</th>
-                <th>Contact / Location</th>
-                {isAdmin && <th style={{ textAlign: 'right' }}>Manage</th>}
+                <th style={{ padding: '8px 14px', fontSize: '11px', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 700 }}>Position</th>
+                <th style={{ padding: '8px 14px', fontSize: '11px', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 700 }}>Leader Name</th>
+                <th style={{ padding: '8px 14px', fontSize: '11px', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 700 }}>ID</th>
+                <th style={{ padding: '8px 14px', fontSize: '11px', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 700 }}>Photo</th>
+                <th style={{ padding: '8px 14px', fontSize: '11px', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 700 }}>Location</th>
+                {isAdmin && <th style={{ textAlign: 'right', padding: '8px 14px', fontSize: '11px', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 700 }}>Manage</th>}
               </tr>
             </thead>
             <tbody>
-              {leaders.map((leader) => {
+              {leaders.map((leader, index) => {
                 const photoSrc = leader.memberPhotoUrl || leader.photoUrl;
+                // Determine rank color based on position code
+                const posCode = (leader.positionCode || '').toLowerCase();
+                let badgeColor = 'var(--info)';
+                let badgeBg = 'var(--info-bg)';
+                if (posCode.includes('pres')) { badgeColor = '#b45309'; badgeBg = '#fef3c7'; } // Gold/Amber
+                else if (posCode.includes('gen')) { badgeColor = '#0f766e'; badgeBg = '#ccfbf1'; } // Teal
+                else if (posCode.includes('vice')) { badgeColor = '#4338ca'; badgeBg = '#e0e7ff'; } // Indigo
+                else if (posCode.includes('sec')) { badgeColor = '#0369a1'; badgeBg = '#e0f2fe'; } // Sky Blue
+                else if (posCode.includes('treas')) { badgeColor = '#15803d'; badgeBg = '#dcfce7'; } // Green
+
                 return (
-                  <tr key={leader.id}>
-                    <td>
-                      <span className="badge badge-info">
-                        <Award size={12} /> {leader.positionTitle}
+                  <tr key={leader.id} style={{ transition: 'background-color 0.2s', cursor: 'default' }}>
+                    <td style={{ verticalAlign: 'middle', padding: '10px 14px' }}>
+                      <span className="badge" style={{ color: badgeColor, backgroundColor: badgeBg, padding: '4px 8px', fontSize: '12px', border: `1px solid ${badgeColor}33` }}>
+                        <Award size={12} style={{ marginRight: '4px' }} /> {leader.positionTitle}
                       </span>
                     </td>
-                    <td style={{ fontWeight: 700 }}>{leader.memberName}</td>
-                    <td>
-                      <code style={{ fontWeight: 700, color: 'var(--primary)' }}>
-                        {leader.membershipId}
-                      </code>
+                    <td style={{ verticalAlign: 'middle', padding: '10px 14px' }}>
+                      <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-main)' }}>{leader.memberName}</div>
                     </td>
-                    <td>
+                    <td style={{ verticalAlign: 'middle', padding: '10px 14px' }}>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', background: 'var(--bg-muted)', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '2px 6px' }}>
+                        <code style={{ fontWeight: 700, color: 'var(--primary)', fontSize: '12px' }}>
+                          {leader.membershipId}
+                        </code>
+                      </div>
+                    </td>
+                    <td style={{ verticalAlign: 'middle', padding: '10px 14px' }}>
                       {photoSrc ? (
-                        <img
-                          src={photoSrc}
-                          alt={leader.memberName}
-                          title="Click to view full image"
-                          onClick={() =>
-                            setPreviewPhoto({
-                              src: photoSrc,
-                              name: leader.memberName,
-                              membershipId: leader.membershipId,
-                              positionTitle: leader.positionTitle,
-                            })
-                          }
-                          style={{
-                            width: '44px',
-                            height: '44px',
-                            borderRadius: '8px',
-                            objectFit: 'cover',
-                            border: '1px solid var(--border-strong)',
-                            display: 'block',
-                            cursor: 'pointer',
-                          }}
-                        />
+                        <div style={{ width: '36px', height: '36px', borderRadius: '50%', overflow: 'hidden', border: '2px solid var(--border-color)', boxShadow: 'var(--shadow-sm)', cursor: 'pointer' }} onClick={() => setPreviewPhoto({ src: photoSrc, name: leader.memberName, membershipId: leader.membershipId, positionTitle: leader.positionTitle })}>
+                          <img
+                            src={photoSrc}
+                            alt={leader.memberName}
+                            title="Click to view full image"
+                            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                          />
+                        </div>
                       ) : (
-                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                          No Photo
-                        </span>
+                        <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--bg-muted)', border: '1px dashed var(--border-strong)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
+                          <UsersRound size={16} />
+                        </div>
                       )}
                     </td>
-                    <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                      {isAdmin && leader.memberMobile ? `${leader.memberMobile} • ` : ''}
-                      {leader.memberMandalName || team.orgName}
+                    <td style={{ verticalAlign: 'middle', padding: '10px 14px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        {isAdmin && leader.memberMobile && <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{leader.memberMobile}</span>}
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <MapPin size={12} /> {leader.memberMandalName || team.orgName}
+                        </span>
+                      </div>
                     </td>
                   {isAdmin && (
-                    <td style={{ textAlign: 'right' }}>
+                    <td style={{ textAlign: 'right', verticalAlign: 'middle', padding: '16px 14px' }}>
                       <div
                         style={{
                           display: 'inline-flex',
                           alignItems: 'center',
-                          gap: '6px',
+                          gap: '8px',
+                          background: 'var(--bg-muted)',
+                          padding: '6px',
+                          borderRadius: '8px'
                         }}
                       >
                         <select
                           className="form-control"
-                          style={{ width: 'auto', padding: '4px 8px', fontSize: '12px' }}
+                          style={{ width: 'auto', padding: '6px 10px', fontSize: '12px', background: '#fff' }}
                           value={leader.positionCode}
                           onChange={(e) => handleChangePosition(leader.id, e.target.value)}
                           title="Change Position"
@@ -376,10 +385,11 @@ export default function TeamCard({
                         <button
                           type="button"
                           className="btn btn-danger btn-sm"
+                          style={{ padding: '6px 10px' }}
                           onClick={() => handleRemoveLeader(leader)}
                           title="Remove from Position"
                         >
-                          <Trash2 size={13} />
+                          <Trash2 size={15} />
                         </button>
                       </div>
                     </td>

@@ -1,5 +1,6 @@
 'use client';
 
+import MemberForm from '@/components/MemberForm';
 import { useState, useEffect, useCallback } from 'react';
 import {
   Search,
@@ -13,6 +14,9 @@ import {
   Award,
   RefreshCw,
 } from 'lucide-react';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import { MoreHorizontal } from 'lucide-react';
+
 import {
   VALID_MEMBERSHIP_STATUSES,
   VALID_TEAM_TYPES,
@@ -38,6 +42,7 @@ export default function MemberTable({
   });
   const [loading, setLoading] = useState(true);
   const [feedback, setFeedback] = useState({ type: '', text: '' });
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
   // Server-side query filters
   const [search, setSearch] = useState('');
@@ -258,10 +263,10 @@ export default function MemberTable({
       <div className="card-header" style={{ flexWrap: 'wrap' }}>
         <div>
           <h2 className="card-title">{title}</h2>
-          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+          {/* <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '2px' }}>
             Server-side paginated &amp; indexed query engine (20+ Lakh Member Capacity) — Showing{' '}
             <strong>{items.length}</strong> of <strong>{pagination.total}</strong> matching records
-          </p>
+          </p> */}
         </div>
 
         <button
@@ -308,15 +313,21 @@ export default function MemberTable({
                 placeholder="e.g. MUD-00000001, Name, or 9848..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
+                style={{ flex: 1 }}
               />
               <button type="submit" className="btn btn-primary btn-sm">
-                <Search size={15} /> Search
+                <Search size={15} /> <span className="hide-mobile">Search</span>
+              </button>
+              <button type="button" className="btn btn-outline btn-sm mobile-only-flex" onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}>
+                <Filter size={15} /> Filters
               </button>
             </div>
           </div>
 
-          <div className="form-group">
-            <label className="form-label">Membership Status</label>
+          {/* Advanced Filters Wrapper */}
+          <div className={`advanced-filters-wrapper ${showAdvancedFilters ? '' : 'hide-mobile-grid'}`}>
+            <div className="form-group">
+              <label className="form-label">Membership Status</label>
             <select
               className="form-control"
               value={status}
@@ -415,6 +426,7 @@ export default function MemberTable({
               </select>
             </div>
           </div>
+          </div> {/* End Advanced Filters Wrapper */}
         </div>
 
         <div
@@ -428,7 +440,7 @@ export default function MemberTable({
             borderTop: '1px solid var(--border-color)',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', flexWrap: 'wrap' }}>
             <Filter size={14} color="var(--text-secondary)" />
             <span>Sort By:</span>
             <select
@@ -474,7 +486,7 @@ export default function MemberTable({
 
       {/* Data Table */}
       <div className="table-container">
-        <table className="data-table">
+        <table className="data-table" style={{ minWidth: "1000px" }}>
           <thead>
             <tr>
               <th>Membership ID / App No</th>
@@ -502,7 +514,7 @@ export default function MemberTable({
             ) : (
               items.map((member) => (
                 <tr key={member.id}>
-                  <td>
+                  <td data-label="Membership ID / App No">
                     {member.membershipId ? (
                       <>
                         <div style={{ fontWeight: 800, color: 'var(--primary)', fontSize: '14px' }}>
@@ -524,7 +536,7 @@ export default function MemberTable({
                     </div>
                   </td>
 
-                  <td>
+                  <td data-label="Member Name & Parentage">
                     <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>
                       {member.fullName}
                     </div>
@@ -533,14 +545,14 @@ export default function MemberTable({
                     </div>
                   </td>
 
-                  <td>
+                  <td data-label="Mobile & Gender">
                     <div style={{ fontWeight: 600 }}>{member.mobile}</div>
                     <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                       {member.gender} • DOB: {member.dob}
                     </div>
                   </td>
 
-                  <td>
+                  <td data-label="District / Constitution / Mandal">
                     <div style={{ fontWeight: 600, fontSize: '13px' }}>{member.districtName}</div>
                     <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                       {member.constitutionName} › {member.mandalName}
@@ -550,7 +562,7 @@ export default function MemberTable({
                     </div>
                   </td>
 
-                  <td>
+                  <td data-label="Leadership Role">
                     {member.leadershipPositions && member.leadershipPositions.length > 0 ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         {member.leadershipPositions.map((lp) => (
@@ -570,74 +582,42 @@ export default function MemberTable({
                     )}
                   </td>
 
-                  <td>{renderStatusBadge(member.status)}</td>
+                  <td data-label="Status">{renderStatusBadge(member.status)}</td>
 
-                  <td style={{ textAlign: 'right' }}>
-                    <div style={{ display: 'inline-flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                      {(member.status === 'Pending' || showApplicationActions) &&
-                        member.status !== 'Active' && (
-                          <button
-                            type="button"
-                            className="btn btn-success btn-sm"
-                            title="Approve & Generate Membership ID"
-                            onClick={() => handleApprove(member)}
-                          >
-                            <CheckCircle size={14} /> Approve
-                          </button>
+                  <td data-label="Actions" style={{ textAlign: 'right', display: 'flex', justifyContent: 'flex-end' }}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button className="btn btn-outline btn-sm" style={{ padding: '4px 8px' }}>
+                          <MoreHorizontal size={16} />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="bg-white" style={{ minWidth: '160px', zIndex: 50 }}>
+                        {(member.status === 'Pending' || showApplicationActions) && member.status !== 'Active' && (
+                          <DropdownMenuItem onClick={() => handleApprove(member)} style={{ color: 'var(--success)', cursor: 'pointer' }}>
+                            <CheckCircle size={14} style={{ marginRight: '8px' }} /> Approve
+                          </DropdownMenuItem>
                         )}
-
-                      {member.status === 'Pending' && (
-                        <button
-                          type="button"
-                          className="btn btn-danger btn-sm"
-                          title="Reject Application"
-                          onClick={() => {
-                            setRejectModalMember(member);
-                            setRejectRemarks('');
-                          }}
-                        >
-                          <XCircle size={14} /> Reject
-                        </button>
-                      )}
-
-                      {member.status === 'Rejected' && showApplicationActions && (
-                        <button
-                          type="button"
-                          className="btn btn-warning btn-sm"
-                          title="Revoke Rejection"
-                          onClick={() => handleRevoke(member)}
-                        >
-                          <RefreshCw size={14} /> Revoke
-                        </button>
-                      )}
-
-                      <button
-                        type="button"
-                        className="btn btn-outline btn-sm"
-                        title="View Complete Profile"
-                        onClick={() => setSelectedMember(member)}
-                      >
-                        <Eye size={14} /> View
-                      </button>
-
-                      <button
-                        type="button"
-                        className="btn btn-outline btn-sm"
-                        title="Edit Member / Status"
-                        onClick={() => setEditingMember({ ...member })}
-                      >
-                        <Edit3 size={14} /> Edit
-                      </button>
-
-                      <button
-                        type="button"
-                        className="btn btn-danger btn-sm"
-                        title="Delete Member"
-                        onClick={() => handleDelete(member)}
-                      >
-                        <XCircle size={14} /> Delete
-                      </button>
-                    </div>
+                        {member.status === 'Pending' && (
+                          <DropdownMenuItem onClick={() => { setRejectModalMember(member); setRejectRemarks(''); }} style={{ color: 'var(--danger)', cursor: 'pointer' }}>
+                            <XCircle size={14} style={{ marginRight: '8px' }} /> Reject
+                          </DropdownMenuItem>
+                        )}
+                        {member.status === 'Rejected' && showApplicationActions && (
+                          <DropdownMenuItem onClick={() => handleRevoke(member)} style={{ color: 'var(--warning)', cursor: 'pointer' }}>
+                            <RefreshCw size={14} style={{ marginRight: '8px' }} /> Revoke
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuItem onClick={() => setSelectedMember(member)} style={{ cursor: 'pointer' }}>
+                          <Eye size={14} style={{ marginRight: '8px' }} /> View Profile
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setEditingMember({ ...member })} style={{ cursor: 'pointer' }}>
+                          <Edit3 size={14} style={{ marginRight: '8px' }} /> Edit Member
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleDelete(member)} style={{ color: 'var(--danger)', cursor: 'pointer' }}>
+                          <XCircle size={14} style={{ marginRight: '8px' }} /> Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </td>
                 </tr>
               ))
@@ -881,123 +861,26 @@ export default function MemberTable({
       {/* EDIT MEMBER MODAL */}
       {editingMember && (
         <div className="modal-backdrop" onClick={() => setEditingMember(null)}>
-          <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-panel" style={{ maxWidth: '920px', maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3 style={{ fontSize: '17px', fontWeight: 700 }}>
-                Edit Member — {editingMember.fullName} ({editingMember.membershipId || editingMember.applicationNo})
+              <h3 style={{ fontSize: '18px', fontWeight: 800 }}>
+                Edit Member — {editingMember.fullName} ({editingMember.membershipId || 'Pending'})
               </h3>
+              <button className="btn btn-outline btn-sm" onClick={() => setEditingMember(null)}>✕</button>
             </div>
-            <form onSubmit={handleSaveEdit}>
-              <div className="modal-body">
-                <div className="form-grid-2">
-                  <div className="form-group">
-                    <label className="form-label">Full Name</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={editingMember.fullName}
-                      onChange={(e) =>
-                        setEditingMember({ ...editingMember, fullName: e.target.value })
-                      }
-                      required
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Membership Status</label>
-                    <select
-                      className="form-control"
-                      value={editingMember.status}
-                      onChange={(e) =>
-                        setEditingMember({ ...editingMember, status: e.target.value })
-                      }
-                    >
-                      {VALID_MEMBERSHIP_STATUSES.map((s) => (
-                        <option key={s} value={s}>
-                          {s}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Father Name</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={editingMember.fatherName}
-                      onChange={(e) =>
-                        setEditingMember({ ...editingMember, fatherName: e.target.value })
-                      }
-                      required
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Mother Name</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={editingMember.motherName}
-                      onChange={(e) =>
-                        setEditingMember({ ...editingMember, motherName: e.target.value })
-                      }
-                      required
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Mobile Number</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={editingMember.mobile}
-                      onChange={(e) =>
-                        setEditingMember({ ...editingMember, mobile: e.target.value })
-                      }
-                      required
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Village / Gramam</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={editingMember.gramamName}
-                      onChange={(e) =>
-                        setEditingMember({ ...editingMember, gramamName: e.target.value })
-                      }
-                      required
-                    />
-                  </div>
-
-                  <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                    <label className="form-label">Admin Remarks</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={editingMember.remarks || ''}
-                      onChange={(e) =>
-                        setEditingMember({ ...editingMember, remarks: e.target.value })
-                      }
-                    />
-                  </div>
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button
-                  type="button"
-                  className="btn btn-outline"
-                  onClick={() => setEditingMember(null)}
-                >
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary">
-                  Save Changes
-                </button>
-              </div>
-            </form>
+            <div className="modal-body" style={{ padding: '0px' }}>
+              <MemberForm
+                hierarchy={hierarchy}
+                isAdminMode={true}
+                isEditMode={true}
+                initialData={editingMember}
+                onSuccess={() => {
+                  setFeedback({ type: 'success', text: 'Member updated successfully!' });
+                  setEditingMember(null);
+                  fetchMembers(pagination.page);
+                }}
+              />
+            </div>
           </div>
         </div>
       )}

@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Edit3, Power, Landmark, Building2, MapPin, Home } from 'lucide-react';
+import { Plus, Edit3, Power, Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ArrowUp, ArrowDown } from 'lucide-react';
 
 export default function AdminOrganizationsPage() {
   const router = useRouter();
@@ -17,6 +17,12 @@ export default function AdminOrganizationsPage() {
 
   // Edit Modal State
   const [editingUnit, setEditingUnit] = useState(null);
+
+  // Data Table State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortConfig, setSortConfig] = useState({ key: 'name', direction: 'asc' });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
 
   const loadHierarchy = useCallback(async () => {
     const res = await fetch('/api/admin/organizations');
@@ -44,7 +50,6 @@ export default function AdminOrganizationsPage() {
 
   const handleParentSelect = (levelRank, unitId) => {
     const newParents = { ...selectedParents, [levelRank]: unitId };
-    // Clear selections for downstream dropdowns
     Object.keys(newParents).forEach((key) => {
       if (parseInt(key) > levelRank) delete newParents[key];
     });
@@ -129,58 +134,97 @@ export default function AdminOrganizationsPage() {
     }
   }
 
-  const currentLevelUnits = hierarchy.orgUnits.filter((u) => u.orgLevelId === activeLevelId);
+  // --- Data Table Logic ---
+  const handleSort = (key) => {
+    let direction = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc';
+    setSortConfig({ key, direction });
+  };
+
+  const currentLevelUnits = useMemo(() => {
+    let units = hierarchy.orgUnits.filter((u) => u.orgLevelId === activeLevelId);
+    
+    // 1. Search Filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      units = units.filter(u => 
+        (u.name && u.name.toLowerCase().includes(q)) || 
+        (u.code && u.code.toLowerCase().includes(q)) ||
+        (u.locationLabel && u.locationLabel.toLowerCase().includes(q))
+      );
+    }
+
+    // 2. Sort
+    units.sort((a, b) => {
+      const valA = (a[sortConfig.key] || '').toLowerCase();
+      const valB = (b[sortConfig.key] || '').toLowerCase();
+      if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return units;
+  }, [hierarchy.orgUnits, activeLevelId, searchQuery, sortConfig]);
+
+  // Pagination calculations
+  const totalPages = Math.ceil(currentLevelUnits.length / rowsPerPage);
+  const paginatedUnits = currentLevelUnits.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
+
+  // Reset pagination when level or search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeLevelId, searchQuery, rowsPerPage]);
 
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-extrabold text-gray-900">Organization / Team Master</h1>
-        <p className="text-sm text-gray-600 mt-1">
-          Manage dynamic geographic locations. Every created unit automatically initializes its 3 Core Teams (Main, Youth, Ladies).
-        </p>
+    <div className="animate-fade-in-up" style={{ padding: '16px', maxWidth: '1600px', margin: '0 auto' }}>
+      
+      {/* Top Header Row (Ultra Compact) */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-end', gap: '16px', marginBottom: '16px' }}>
+        <div>
+          <h1 style={{ fontSize: '20px', fontWeight: 800, color: 'var(--primary-dark)', margin: 0, lineHeight: 1.2 }}>Organization & Team Master</h1>
+          <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px', margin: 0 }}>
+            Manage locations & initialize 3 Core Teams automatically.
+          </p>
+        </div>
+
+        {/* Tabs - Moved to Header Row to save vertical space */}
+        <div className="animate-fade-in-up delay-100" style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+          {hierarchy.orgLevels.map((lvl) => {
+            const count = hierarchy.orgUnits.filter((u) => u.orgLevelId === lvl.id).length;
+            const isActive = activeLevelId === lvl.id;
+            return (
+              <button
+                key={lvl.id}
+                onClick={() => {
+                  setActiveLevelId(lvl.id);
+                  setSelectedParents({});
+                  setFeedback({type:'', text:''});
+                  setSearchQuery('');
+                }}
+                className={`btn ${isActive ? 'btn-primary' : 'btn-outline'}`}
+                style={{ fontWeight: 600, padding: '4px 12px', fontSize: '12px', borderRadius: '6px', height: '28px' }}
+              >
+                {lvl.name} ({count})
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {feedback.text && (
-        <div className={`p-4 mb-6 rounded-md text-sm ${feedback.type === 'error' ? 'bg-red-50 text-red-800' : 'bg-green-50 text-green-800'}`}>
+        <div className={`alert ${feedback.type === 'error' ? 'alert-error' : 'alert-success'} animate-fade-in-up`} style={{ padding: '8px 12px', fontSize: '13px', marginBottom: '16px' }}>
           {feedback.text}
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="flex flex-wrap gap-2 mb-6">
-        {hierarchy.orgLevels.map((lvl) => {
-          const count = hierarchy.orgUnits.filter((u) => u.orgLevelId === lvl.id).length;
-          return (
-            <button
-              key={lvl.id}
-              onClick={() => {
-                setActiveLevelId(lvl.id);
-                setSelectedParents({});
-                setFeedback({type:'', text:''});
-              }}
-              className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                activeLevelId === lvl.id
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-              }`}
-            >
-              {lvl.name} ({count})
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Add Form */}
-        <div className="lg:col-span-1 bg-white border border-gray-200 rounded-lg shadow-sm">
-          <div className="px-5 py-4 border-b border-gray-200 bg-gray-50 rounded-t-lg">
-            <h2 className="font-semibold text-gray-800">Add New {activeLevel?.name}</h2>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'flex-start' }}>
+        {/* Add Form (Compact) */}
+        <div className="card animate-fade-in-up delay-200" style={{ flex: '1 1 260px', maxWidth: '320px', position: 'sticky', top: '16px' }}>
+          <div className="card-header" style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-surface)' }}>
+            <h2 style={{ fontSize: '14px', fontWeight: 700, margin: 0, color: 'var(--primary-dark)' }}>Add {activeLevel?.name}</h2>
           </div>
-          <form onSubmit={handleCreateUnit} className="p-5 flex flex-col gap-4">
-            
-            {/* Dynamic Cascading Dropdowns */}
+          <form onSubmit={handleCreateUnit} style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {requiredParentLevels.map((parentLvl, index) => {
-              // The options for this dropdown depend on the selection in the *previous* dropdown
               let options = hierarchy.orgUnits.filter(u => u.orgLevelId === parentLvl.id);
               if (index > 0) {
                 const prevLvlRank = requiredParentLevels[index - 1].levelRank;
@@ -189,17 +233,18 @@ export default function AdminOrganizationsPage() {
               }
 
               return (
-                <div key={parentLvl.id} className="flex flex-col gap-1">
-                  <label className="text-sm font-medium text-gray-700">
+                <div className="form-group" key={parentLvl.id} style={{ margin: 0 }}>
+                  <label className="form-label" style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
                     Select {parentLvl.name} *
                   </label>
                   <select
-                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="form-control"
                     value={selectedParents[parentLvl.levelRank] || ''}
                     onChange={(e) => handleParentSelect(parentLvl.levelRank, e.target.value)}
                     required
+                    style={{ background: '#f8fafc', padding: '6px 10px', fontSize: '12px', height: '32px' }}
                   >
-                    <option value="">-- Choose {parentLvl.name} --</option>
+                    <option value="">-- Choose --</option>
                     {options.map((opt) => (
                       <option key={opt.id} value={opt.id}>{opt.name}</option>
                     ))}
@@ -208,79 +253,107 @@ export default function AdminOrganizationsPage() {
               );
             })}
 
-            <div className="flex flex-col gap-1">
-              <label className="text-sm font-medium text-gray-700">{activeLevel?.name} Name *</label>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>{activeLevel?.name} Name *</label>
               <input
                 type="text"
                 required
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
-                placeholder={`Enter ${activeLevel?.name} Name`}
+                className="form-control"
+                placeholder="Enter Name"
+                style={{ background: '#f8fafc', padding: '6px 10px', fontSize: '12px', height: '32px' }}
               />
             </div>
             
-            <div className="flex flex-col gap-1">
-              <label className="text-sm font-medium text-gray-700">Code (Optional)</label>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Code (Optional)</label>
               <input
                 type="text"
                 value={newCode}
                 onChange={(e) => setNewCode(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
-                placeholder="Auto-generated if empty"
+                className="form-control"
+                placeholder="Auto-generated"
+                style={{ background: '#f8fafc', padding: '6px 10px', fontSize: '12px', height: '32px' }}
               />
             </div>
 
-            <button type="submit" className="mt-2 w-full bg-blue-600 text-white font-medium py-2 rounded-md hover:bg-blue-700 flex items-center justify-center gap-2">
-              <Plus size={18} /> Create & Init Teams
+            <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '6px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', fontSize: '12px', marginTop: '4px', height: '32px' }}>
+              <Plus size={14} /> Create & Init
             </button>
           </form>
         </div>
 
-        {/* List */}
-        <div className="lg:col-span-2 bg-white border border-gray-200 rounded-lg shadow-sm">
-          <div className="px-5 py-4 border-b border-gray-200 bg-gray-50 rounded-t-lg">
-            <h2 className="font-semibold text-gray-800">Existing {activeLevel?.name} Records</h2>
+        {/* List Data Table */}
+        <div className="card animate-fade-in-up delay-200" style={{ flex: '2 1 500px', minWidth: '0', display: 'flex', flexDirection: 'column' }}>
+          {/* Table Header Controls */}
+          <div className="card-header" style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-surface)', display: 'flex', flexWrap: 'wrap', gap: '12px', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h2 style={{ fontSize: '14px', fontWeight: 700, margin: 0, color: 'var(--primary-dark)' }}>Existing {activeLevel?.name} Records</h2>
+            
+            {/* Search Bar */}
+            <div style={{ position: 'relative', width: '100%', maxWidth: '250px' }}>
+              <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+              <input
+                type="text"
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="form-control"
+                style={{ paddingLeft: '30px', borderRadius: '16px', background: '#f1f5f9', border: 'none', height: '28px', fontSize: '12px' }}
+              />
+            </div>
           </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-white">
+
+          <div className="table-container" style={{ margin: 0, flex: 1, overflowX: 'auto', overflowY: 'auto' }}>
+            <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+              <thead style={{ background: '#f8fafc', position: 'sticky', top: 0, zIndex: 10 }}>
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Name & Code</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Parent Path</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Status</th>
-                  <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Actions</th>
+                  <th onClick={() => handleSort('name')} style={{ padding: '8px 12px', fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 700, cursor: 'pointer', borderBottom: '1px solid var(--border-color)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>Name & Code {sortConfig.key === 'name' ? (sortConfig.direction === 'asc' ? <ArrowUp size={10}/> : <ArrowDown size={10}/>) : ''}</div>
+                  </th>
+                  <th onClick={() => handleSort('locationLabel')} style={{ padding: '8px 12px', fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 700, cursor: 'pointer', borderBottom: '1px solid var(--border-color)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>Parent Path {sortConfig.key === 'locationLabel' ? (sortConfig.direction === 'asc' ? <ArrowUp size={10}/> : <ArrowDown size={10}/>) : ''}</div>
+                  </th>
+                  <th onClick={() => handleSort('status')} style={{ padding: '8px 12px', fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 700, cursor: 'pointer', borderBottom: '1px solid var(--border-color)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>Status {sortConfig.key === 'status' ? (sortConfig.direction === 'asc' ? <ArrowUp size={10}/> : <ArrowDown size={10}/>) : ''}</div>
+                  </th>
+                  <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 700, borderBottom: '1px solid var(--border-color)' }}>Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200 bg-white">
-                {currentLevelUnits.length === 0 ? (
+              <tbody>
+                {paginatedUnits.length === 0 ? (
                   <tr>
-                    <td colSpan="4" className="px-6 py-4 text-center text-sm text-gray-500">No records found.</td>
+                    <td colSpan="4" style={{ textAlign: 'center', padding: '40px 24px', color: 'var(--text-muted)' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                        <Search size={20} style={{ opacity: 0.5 }} />
+                        <span>No records found.</span>
+                      </div>
+                    </td>
                   </tr>
                 ) : (
-                  currentLevelUnits.map((unit) => (
-                    <tr key={unit.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="font-bold text-gray-900">{unit.name}</div>
-                        <div className="text-xs text-gray-500">{unit.code}</div>
+                  paginatedUnits.map((unit) => (
+                    <tr key={unit.id} style={{ transition: 'background-color 0.2s', borderBottom: '1px solid var(--border-color)' }}>
+                      <td style={{ padding: '8px 12px' }}>
+                        <div style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '13px' }}>{unit.name}</div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>{unit.code}</div>
                       </td>
-                      <td className="px-6 py-4">
-                        <div className="text-xs text-gray-600 max-w-[200px] truncate" title={unit.locationLabel}>
+                      <td style={{ padding: '8px 12px' }}>
+                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)', maxWidth: '220px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', background: 'var(--bg-muted)', padding: '2px 6px', borderRadius: '4px', display: 'inline-block' }} title={unit.locationLabel}>
                           {unit.locationLabel || '-'}
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${unit.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                      <td style={{ padding: '8px 12px' }}>
+                        <span className={`badge ${unit.status === 'Active' ? 'badge-active' : 'badge-inactive'}`} style={{ fontSize: '10px', padding: '2px 6px' }}>
                           {unit.status}
                         </span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <div className="flex items-center justify-end gap-2">
-                          <button onClick={() => setEditingUnit(unit)} className="text-gray-500 hover:text-blue-600 border border-gray-300 rounded p-1">
-                            <Edit3 size={14} />
+                      <td style={{ textAlign: 'right', padding: '8px 12px' }}>
+                        <div style={{ display: 'inline-flex', gap: '4px' }}>
+                          <button onClick={() => setEditingUnit(unit)} className="btn btn-outline btn-sm" title="Edit" style={{ padding: '2px 6px', minHeight: '24px', height: '24px' }}>
+                            <Edit3 size={12} />
                           </button>
-                          <button onClick={() => handleToggleStatus(unit)} className="text-gray-500 hover:text-red-600 border border-gray-300 rounded p-1">
-                            <Power size={14} />
+                          <button onClick={() => handleToggleStatus(unit)} className="btn btn-outline btn-sm" style={{ color: unit.status === 'Active' ? 'var(--danger)' : 'var(--success)', padding: '2px 6px', minHeight: '24px', height: '24px' }} title="Toggle Status">
+                            <Power size={12} />
                           </button>
                         </div>
                       </td>
@@ -290,54 +363,113 @@ export default function AdminOrganizationsPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Footer */}
+          {currentLevelUnits.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', padding: '8px 16px', borderTop: '1px solid var(--border-color)', background: 'var(--bg-surface)', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', color: 'var(--text-secondary)' }}>
+                <span>Rows:</span>
+                <select 
+                  value={rowsPerPage} 
+                  onChange={(e) => setRowsPerPage(Number(e.target.value))}
+                  className="form-control"
+                  style={{ padding: '2px 6px', height: '24px', fontSize: '11px', width: 'auto', minHeight: '24px' }}
+                >
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+              </div>
+              
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                {((currentPage - 1) * rowsPerPage) + 1}-{Math.min(currentPage * rowsPerPage, currentLevelUnits.length)} of {currentLevelUnits.length}
+              </div>
+              
+              <div style={{ display: 'flex', gap: '2px' }}>
+                <button 
+                  className="btn btn-outline btn-sm" 
+                  disabled={currentPage === 1} 
+                  onClick={() => setCurrentPage(1)}
+                  style={{ padding: '2px', opacity: currentPage === 1 ? 0.5 : 1, minHeight: '24px', height: '24px', width: '24px' }}
+                >
+                  <ChevronsLeft size={14} />
+                </button>
+                <button 
+                  className="btn btn-outline btn-sm" 
+                  disabled={currentPage === 1} 
+                  onClick={() => setCurrentPage(p => p - 1)}
+                  style={{ padding: '2px', opacity: currentPage === 1 ? 0.5 : 1, minHeight: '24px', height: '24px', width: '24px' }}
+                >
+                  <ChevronLeft size={14} />
+                </button>
+                <button 
+                  className="btn btn-outline btn-sm" 
+                  disabled={currentPage === totalPages || totalPages === 0} 
+                  onClick={() => setCurrentPage(p => p + 1)}
+                  style={{ padding: '2px', opacity: currentPage === totalPages || totalPages === 0 ? 0.5 : 1, minHeight: '24px', height: '24px', width: '24px' }}
+                >
+                  <ChevronRight size={14} />
+                </button>
+                <button 
+                  className="btn btn-outline btn-sm" 
+                  disabled={currentPage === totalPages || totalPages === 0} 
+                  onClick={() => setCurrentPage(totalPages)}
+                  style={{ padding: '2px', opacity: currentPage === totalPages || totalPages === 0 ? 0.5 : 1, minHeight: '24px', height: '24px', width: '24px' }}
+                >
+                  <ChevronsRight size={14} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Edit Modal */}
       {editingUnit && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg max-w-md w-full shadow-xl">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h3 className="font-bold text-lg">Edit {activeLevel?.name}</h3>
+        <div className="modal-backdrop" onClick={() => setEditingUnit(null)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, background: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-panel animate-fade-in-up" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '400px', width: '90%', background: 'white', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }}>
+            <div className="modal-header" style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-color)' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: 800 }}>Edit {activeLevel?.name}</h3>
             </div>
             <form onSubmit={handleSaveEdit}>
-              <div className="px-6 py-4 flex flex-col gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+              <div className="modal-body" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div className="form-group">
+                  <label className="form-label" style={{ fontSize: '12px', textTransform: 'uppercase' }}>Name</label>
                   <input
                     type="text"
                     required
                     value={editingUnit.name}
                     onChange={(e) => setEditingUnit({ ...editingUnit, name: e.target.value })}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                    className="form-control"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Code</label>
+                <div className="form-group">
+                  <label className="form-label" style={{ fontSize: '12px', textTransform: 'uppercase' }}>Code</label>
                   <input
                     type="text"
                     value={editingUnit.code}
                     onChange={(e) => setEditingUnit({ ...editingUnit, code: e.target.value })}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                    className="form-control"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <div className="form-group">
+                  <label className="form-label" style={{ fontSize: '12px', textTransform: 'uppercase' }}>Status</label>
                   <select
                     value={editingUnit.status}
                     onChange={(e) => setEditingUnit({ ...editingUnit, status: e.target.value })}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                    className="form-control"
                   >
                     <option value="Active">Active</option>
                     <option value="Inactive">Inactive</option>
                   </select>
                 </div>
               </div>
-              <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3 bg-gray-50 rounded-b-lg">
-                <button type="button" onClick={() => setEditingUnit(null)} className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100 font-medium text-sm">
+              <div className="modal-footer" style={{ padding: '16px 20px', borderTop: '1px solid var(--border-color)', background: '#f8fafc', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+                <button type="button" onClick={() => setEditingUnit(null)} className="btn btn-outline" style={{ background: 'white' }}>
                   Cancel
                 </button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium text-sm">
+                <button type="submit" className="btn btn-primary">
                   Save Changes
                 </button>
               </div>
